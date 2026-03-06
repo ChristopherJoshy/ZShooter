@@ -43,7 +43,7 @@ async function bootstrap() {
   });
 
   await fastify.register(cors, {
-    origin: FRONTEND_URL,
+    origin: true,
     credentials: true,
     methods: ['GET', 'POST', 'PATCH', 'OPTIONS'],
   });

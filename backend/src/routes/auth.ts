@@ -7,7 +7,7 @@ import { COOKIE_NAME } from '../plugins/auth.js';
 const COOKIE_OPTS = {
   httpOnly: true,
   secure: process.env.NODE_ENV === 'production',
-  sameSite: 'lax' as const,
+  sameSite: process.env.NODE_ENV === 'production' ? ('none' as const) : ('lax' as const),
   path: '/',
   maxAge: 60 * 60 * 24 * 7, // 7 days in seconds
 };
@@ -69,7 +69,7 @@ export default async function authRoutes(fastify: FastifyInstance) {
   // POST /auth/logout
   fastify.post('/auth/logout', async (_request, reply) => {
     return reply
-      .clearCookie(COOKIE_NAME, { path: '/' })
+      .clearCookie(COOKIE_NAME, COOKIE_OPTS)
       .send({ ok: true });
   });
 

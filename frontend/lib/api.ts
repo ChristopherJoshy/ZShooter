@@ -2,7 +2,8 @@
 // All requests go through Next.js rewrites (/api/* → backend).
 import type { GameSave } from './game/types';
 
-const BASE = '/api';
+const API_URL = process.env.NEXT_PUBLIC_API_URL || '';
+const BASE = API_URL ? `${API_URL.replace(/\/+$/, '')}/api` : '/api';
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(BASE + path, {
