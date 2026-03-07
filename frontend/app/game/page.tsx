@@ -2,10 +2,9 @@ import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
 import GamePageClient from './_GamePageClient';
 
-// Server-side API base — prefer the non-public env var (not exposed to browser bundle),
-// fall back to the public one, then to a safe default matching the backend PORT.
+// Server-side API base — env var for local dev, hardcoded prod URL as fallback.
 function apiBase(): string {
-  return process.env.API_URL ?? process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000';
+  return process.env.API_URL ?? 'https://zshooter.onrender.com';
 }
 
 // Fetch profile server-side via internal rewrite (same origin, cookie forwarded).
