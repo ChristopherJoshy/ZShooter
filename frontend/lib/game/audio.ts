@@ -239,5 +239,67 @@ export function sfx(n: string): void {
     case 'menuClick':  
       oscSweep(880, 440, 'sine', 0.08, 0.05); 
       break;
+
+    // Chaser death: fast high-pitched pop — noise burst (highpass) + short sine sweep down
+    case 'dieChaser':
+      noiseBurst(0.08, 0.1, 0, 8000);
+      oscSweep(600, 150, 'sine', 0.12, 0.07);
+      break;
+
+    // Shooter death: ammo scatter — 3 rapid metallic clicks + downward sweep
+    case 'dieShooter':
+      tone(400, 'square', 0.06, 0.05, 0);
+      tone(320, 'square', 0.06, 0.05, 0.03);
+      tone(200, 'square', 0.06, 0.04, 0.06);
+      oscSweep(400, 80, 'sine', 0.18, 0.06, 0.02);
+      break;
+
+    // Tank death: deep resonant thud — heavy low noise + very low sine sweep
+    case 'dieTank':
+      noiseBurst(0.5, 0.14, 0, 600);
+      oscSweep(120, 25, 'sine', 0.5, 0.12);
+      break;
+
+    // Speeder death: high-freq whine + noise — sawtooth sweep + highpass burst
+    case 'dieSpeeder':
+      oscSweep(1800, 400, 'sawtooth', 0.18, 0.08);
+      noiseBurst(0.1, 0.09, 0, 9000);
+      break;
+
+    // Splitter death: wet organic pop + two rising tones
+    case 'dieSplitter':
+      noiseBurst(0.2, 0.1, 0, 1200);
+      noiseBurst(0.15, 0.06, 0.02, 800);
+      oscSweep(200, 600, 'sine', 0.22, 0.06);
+      oscSweep(250, 700, 'sine', 0.22, 0.05, 0.04);
+      break;
+
+    // Stalker death: ethereal phase-shift — vibrato + sine sweep
+    case 'dieStalker':
+      toneVibrato(440, 'triangle', 0.4, 0.08, 0, 14, 60);
+      oscSweep(800, 200, 'sine', 0.25, 0.07);
+      break;
+
+    // Boss death: massive layered explosion — 3 noise bursts + long low sweep + overtone sweeps
+    case 'dieBoss':
+      noiseBurst(0.6, 0.18, 0, 400);
+      noiseBurst(0.4, 0.12, 0.05, 2000);
+      noiseBurst(0.25, 0.08, 0.1, 8000);
+      oscSweep(200, 20, 'sine', 0.8, 0.15);
+      oscSweep(400, 60, 'square', 0.5, 0.07, 0.08);
+      oscSweep(600, 100, 'sine', 0.35, 0.05, 0.15);
+      break;
+
+    // Stalker teleport: phase-shift whoosh
+    case 'stalkerTeleport':
+      oscSweep(1200, 300, 'sine', 0.18, 0.06);
+      noiseBurst(0.08, 0.05, 0, 5000);
+      break;
+
+    // Heavy contact hit (tank/boss): deeper pain — low noise + slow sawtooth sweep
+    case 'hurtHeavy':
+      noiseBurst(0.5, 0.18, 0, 2000);
+      oscSweep(200, 40, 'sawtooth', 0.35, 0.12);
+      break;
   }
 }

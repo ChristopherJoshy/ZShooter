@@ -18,7 +18,7 @@ export interface Upgrades {
 }
 
 export type WeaponId = 'seedShot' | 'petalSpray' | 'thornBurst' | 'lotusBeam'
-  | 'pulseBlossom' | 'twinPetal' | 'mistArc' | 'rootCannon';
+  | 'pulseBlossom' | 'twinPetal' | 'mistArc' | 'rootCannon' | 'multiShoot';
 
 // ── Gacha / inventory ─────────────────────────────────────────────────────────
 
@@ -66,11 +66,6 @@ export interface RankedProgress {
   firstPlaceCount: number;
 }
 
-export interface StoryProgressState {
-  completedChapters: StoryChapterProgress[];
-  fullClearDate: number | null;
-}
-
 export interface PlayerSettings {
   audioLevel: number;
   sfxEnabled: boolean;
@@ -98,10 +93,8 @@ export interface GameSave {
   runHistory: RunRecord[];     // last 20 runs
   // Phase 6
   stats: LifetimeStats;
-  // Phase 11
-  storyProgress: StoryChapterProgress[];
   ranked: RankedProgress;
-  story: StoryProgressState;
+  highestWave: number;
 }
 
 export interface PlayerStats {
@@ -251,15 +244,7 @@ export interface WaveCfg {
   types: EnemyType[];
 }
 
-export type GameState = 'garden' | 'mode-select' | 'playing' | 'story' | 'results';
-
-export type StoryDifficulty = 'calm' | 'balanced' | 'tempest';
-
-export interface StoryChapterProgress {
-  chapterId: number;
-  difficulty: StoryDifficulty;
-  completedAt: number;  // Unix ms
-}
+export type GameState = 'garden' | 'mode-select' | 'playing' | 'results';
 
 // ── Profile cosmetics ──────────────────────────────────────────────────────────
 
@@ -306,6 +291,7 @@ export interface GameRunState {
   waveTotal: number;
   waveTransTimer: number;
   waveTrans: boolean;
+  waveAnnTimer: number;
   spawnTimer: number;
   spawnInterval: number;
 
@@ -323,9 +309,7 @@ export interface GameRunState {
   stats: PlayerStats;
   paused: boolean;
 
-  // Story mode — set when entering a story run; used by beginWave / updEnemies
+  // waveCfg — current wave config (used by beginWave / updEnemies)
   waveCfg?: WaveCfg;
-  storyChapterId?: number;
-  storyDiffMult?: { hp: number; speed: number };
   opponentNames?: string[];
 }

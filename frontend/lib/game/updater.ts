@@ -3,23 +3,20 @@ import { W, H, PAL, COMBO_DUR, ABIL_DUR } from './constants';
 import { clamp, lerp, rnd } from './physics';
 import { makeBullet, spawnAtEdge, makeSeedDrops, makePowerup, makeEnemy } from './entities';
 import { sfx } from './audio';
-import { getWaveCfg, getStoryWaveCfg } from './waves';
+import { getWaveCfg } from './waves';
 import type { GameRunState, Player, Enemy, Particle, SeedDrop, WaveCfg } from './types';
 
-// ── Shake ─────────────────────────────────────────────────────────────────────
+// Suppress unused-import lint for types only used in function signatures
+type _Particle = Particle;
+type _SeedDrop = SeedDrop;
 
-export function addShake(state: GameRunState, m: number): void {
-  state.shake.m = Math.max(state.shake.m, m * 0.42);
-}
+// ── Shake ─────────────────────────────────────────────────────────────────────
+// Shake is disabled — these are kept as no-ops so call sites don't need changing.
+
+export function addShake(_state: GameRunState, _m: number): void { /* no-op */ }
 
 export function updShake(state: GameRunState): void {
-  if (state.shake.m > 0.15) {
-    state.shake.x = rnd(-0.5, 0.5) * state.shake.m;
-    state.shake.y = rnd(-0.5, 0.5) * state.shake.m;
-    state.shake.m *= 0.78;
-  } else {
-    state.shake.x = 0; state.shake.y = 0; state.shake.m = 0;
-  }
+  state.shake.x = 0; state.shake.y = 0; state.shake.m = 0;
 }
 
 // ── Particles ─────────────────────────────────────────────────────────────────
@@ -90,9 +87,28 @@ export function useAbility(state: GameRunState): void {
     addShake(state, 6);
     state.abilityActive = true;
     state.abilityTimer = Math.round(ABIL_DUR.blossomPulse * durMult);
+  } else if (ab === 'thornVolley') {
+    // 12-way instant burst from player position — one bullet per direction
+    const col = PAL.W.thornBurst;
+    for (let k = 0; k < 12; k++) {
+      const ang = (k / 12) * Math.PI * 2;
+      const b = makeBullet(
+        state.player.x + Math.cos(ang) * 18,
+        state.player.y + Math.sin(ang) * 18,
+        ang, 11, 3.5, col, Math.round(state.stats.damage * 1.4), false, false, 'thornBurst'
+      );
+      b.maxLife = 40;
+      state.bullets.push(b);
+    }
+    spawnPetalBurst(state, state.player.x, state.player.y, 20, col);
+    spawnParticles(state, state.player.x, state.player.y, 14, col, 5, 22, 2.5);
+    sfx('pulse');
+    addShake(state, 5);
+    state.abilityActive = true;
+    state.abilityTimer = Math.round(ABIL_DUR.thornVolley * durMult);
   }
-  // Base CDs from ABIL_DUR map, scaled by abilityCDMult
-  const BASE_CD: Record<string, number> = { petalDash: 180, bloomShield: 480, blossomPulse: 300, none: 0 };
+  // Base CDs from ABIL_CD map, scaled by abilityCDMult
+  const BASE_CD: Record<string, number> = { petalDash: 150, bloomShield: 420, blossomPulse: 240, thornVolley: 200, none: 0 };
   state.abilityCooldown = Math.round((BASE_CD[ab] ?? 1) * cdMult);
 }
 
@@ -115,49 +131,59 @@ function fireBullets(state: GameRunState, p: Player): void {
   const a = p.angle; const { weapon, damage } = state.stats;
   const col = PAL.W[weapon as keyof typeof PAL.W] ?? PAL.player;
   if (weapon === 'seedShot') {
-    state.bullets.push(makeBullet(p.x + Math.cos(a) * 18, p.y + Math.sin(a) * 18, a + rnd(-0.5, 0.5) * 0.03, 13, 3.5, col, damage, false, false, weapon));
+    state.bullets.push(makeBullet(p.x + Math.cos(a) * 18, p.y + Math.sin(a) * 18, a + rnd(-0.5, 0.5) * 0.03, 13, 3.5, col, Math.round(damage * 1.1), false, false, weapon));
     spawnParticles(state, p.x + Math.cos(a) * 14, p.y + Math.sin(a) * 14, 2, col, 1.5, 10, 1.5);
     sfx('shoot');
   } else if (weapon === 'petalSpray') {
-    for (let i = -1; i <= 1; i++) state.bullets.push(makeBullet(p.x + Math.cos(a) * 16, p.y + Math.sin(a) * 16, a + i * 0.22 + rnd(-0.5, 0.5) * 0.04, 12, 3, col, Math.round(damage * 0.65), false, false, weapon));
+    for (let i = -1; i <= 1; i++) state.bullets.push(makeBullet(p.x + Math.cos(a) * 16, p.y + Math.sin(a) * 16, a + i * 0.22 + rnd(-0.5, 0.5) * 0.04, 12, 3, col, Math.round(damage * 0.72), false, false, weapon));
     sfx('shootPetal');
   } else if (weapon === 'thornBurst') {
     for (let j = 0; j < 5; j++) {
       const sp = (j - 2) * 0.18 + rnd(-0.5, 0.5) * 0.06;
-      const b = makeBullet(p.x + Math.cos(a) * 14, p.y + Math.sin(a) * 14, a + sp, 11, 2.5, col, Math.round(damage * 0.5), false, false, weapon);
+      const b = makeBullet(p.x + Math.cos(a) * 14, p.y + Math.sin(a) * 14, a + sp, 11, 2.5, col, Math.round(damage * 0.55), false, false, weapon);
       b.maxLife = 28; state.bullets.push(b);
     }
     sfx('shootThorn');
   } else if (weapon === 'lotusBeam') {
-    state.bullets.push(makeBullet(p.x + Math.cos(a) * 20, p.y + Math.sin(a) * 20, a + rnd(-0.5, 0.5) * 0.02, 10, 4, col, Math.round(damage * 1.7), false, true, weapon));
+    state.bullets.push(makeBullet(p.x + Math.cos(a) * 20, p.y + Math.sin(a) * 20, a + rnd(-0.5, 0.5) * 0.02, 10, 4, col, Math.round(damage * 1.9), false, true, weapon));
     sfx('shootLotus');
   } else if (weapon === 'pulseBlossom') {
-    // Rapid autofire; fire rate handled via WEAPON_DEFS (4fr) — here just spawn one bullet
-    const b = makeBullet(p.x + Math.cos(a) * 16, p.y + Math.sin(a) * 16, a + rnd(-0.5, 0.5) * 0.04, 14, 3, col, Math.round(damage * 0.5), false, false, weapon);
+    const b = makeBullet(p.x + Math.cos(a) * 16, p.y + Math.sin(a) * 16, a + rnd(-0.5, 0.5) * 0.04, 14, 3, col, Math.round(damage * 0.56), false, false, weapon);
     b.maxLife = 55;
     state.bullets.push(b);
     spawnParticles(state, p.x + Math.cos(a) * 12, p.y + Math.sin(a) * 12, 1, col, 1.2, 8, 1.5);
     sfx('shootPulse');
   } else if (weapon === 'twinPetal') {
-    // Two parallel bullets offset ±5px perpendicular to aim direction
     const px = Math.cos(a + Math.PI / 2); const py = Math.sin(a + Math.PI / 2);
     for (const sign of [-1, 1]) {
       const ox = px * 5 * sign; const oy = py * 5 * sign;
-      state.bullets.push(makeBullet(p.x + Math.cos(a) * 16 + ox, p.y + Math.sin(a) * 16 + oy, a + rnd(-0.5, 0.5) * 0.025, 12, 3.5, col, Math.round(damage * 0.72), false, false, weapon));
+      state.bullets.push(makeBullet(p.x + Math.cos(a) * 16 + ox, p.y + Math.sin(a) * 16 + oy, a + rnd(-0.5, 0.5) * 0.025, 12, 3.5, col, Math.round(damage * 0.78), false, false, weapon));
     }
     sfx('shootTwin');
   } else if (weapon === 'mistArc') {
-    const b = makeBullet(p.x + Math.cos(a) * 18, p.y + Math.sin(a) * 18, a + rnd(-0.5, 0.5) * 0.12, 9, 4.5, col, Math.round(damage * 0.95), false, false, weapon);
+    const b = makeBullet(p.x + Math.cos(a) * 18, p.y + Math.sin(a) * 18, a + rnd(-0.5, 0.5) * 0.12, 9, 4.5, col, Math.round(damage * 1.05), false, false, weapon);
     b.homing = true; b.maxLife = 75;
     state.bullets.push(b);
     sfx('shootMist');
   } else if (weapon === 'rootCannon') {
-    // Slow heavy projectile — low speed, large radius, high damage
-    const b = makeBullet(p.x + Math.cos(a) * 20, p.y + Math.sin(a) * 20, a + rnd(-0.5, 0.5) * 0.015, 6.5, 8, col, Math.round(damage * 4.5), false, false, weapon);
+    const b = makeBullet(p.x + Math.cos(a) * 20, p.y + Math.sin(a) * 20, a + rnd(-0.5, 0.5) * 0.015, 6.5, 8, col, Math.round(damage * 5.0), false, false, weapon);
     b.maxLife = 70;
     state.bullets.push(b);
     spawnParticles(state, p.x, p.y, 5, col, 2, 18, 3);
     sfx('shootRoot');
+  } else if (weapon === 'multiShoot') {
+    // 5 bullets in a tight fan, evenly spread across ±0.32 rad
+    for (let k = 0; k < 5; k++) {
+      const spread = (k - 2) * 0.16 + rnd(-0.5, 0.5) * 0.03;
+      const b = makeBullet(
+        p.x + Math.cos(a) * 16, p.y + Math.sin(a) * 16,
+        a + spread, 12.5, 3, col, Math.round(damage * 0.6), false, false, weapon
+      );
+      b.maxLife = 52;
+      state.bullets.push(b);
+    }
+    spawnParticles(state, p.x + Math.cos(a) * 12, p.y + Math.sin(a) * 12, 4, col, 2, 12, 2);
+    sfx('shootThorn');
   }
 }
 
@@ -172,8 +198,10 @@ export function updPlayer(state: GameRunState, dt: number, onEndGame: EndGameFn)
   if (state.keys['KeyA'] || state.keys['ArrowLeft'])  mx -= 1;
   if (state.keys['KeyD'] || state.keys['ArrowRight']) mx += 1;
   const mv = mx || my; const ln = Math.hypot(mx, my) || 1;
-  p.vx = lerp(p.vx, mv ? (mx / ln) * p.speed : 0, 0.22);
-  p.vy = lerp(p.vy, mv ? (my / ln) * p.speed : 0, 0.22);
+  // Player speed scales +2% per wave completed (wave 1 = base, wave 2 = +2%, etc.)
+  const effectiveSpeed = p.speed * (1 + (state.wave - 1) * 0.02);
+  p.vx = lerp(p.vx, mv ? (mx / ln) * effectiveSpeed : 0, 0.22);
+  p.vy = lerp(p.vy, mv ? (my / ln) * effectiveSpeed : 0, 0.22);
   p.x = clamp(p.x + p.vx * dt, p.r, W - p.r);
   p.y = clamp(p.y + p.vy * dt, p.r, H - p.r);
   p.angle = Math.atan2(state.mouseY - p.y, state.mouseX - p.x);
@@ -204,23 +232,75 @@ export function updPlayer(state: GameRunState, dt: number, onEndGame: EndGameFn)
 // ── Kill handling ─────────────────────────────────────────────────────────────
 
 function onKill(state: GameRunState, e: Enemy, idx: number): void {
+  state.combo = Math.min(state.combo + 1, 8);
   const pts = e.score * state.combo;
   state.score += pts;
   state.kills++;
-  state.combo = Math.min(state.combo + 1, 8);
   state.comboTimer = COMBO_DUR;
-  spawnPetalBurst(state, e.x, e.y, e.type === 'boss' ? 50 : 12, e.col);
-  spawnParticles(state, e.x, e.y, e.type === 'boss' ? 18 : 7, e.col, e.type === 'boss' ? 5 : 3, 32, 3);
   spawnText(state, e.x, e.y - e.r - 8, '+' + pts, PAL.combo, 11);
-  addShake(state, e.type === 'boss' ? 14 : 3.5);
-  sfx('die');
+
+  // Per-enemy kill particles + sfx
+  if (e.type === 'chaser') {
+    spawnPetalBurst(state, e.x, e.y, 20, e.col);
+    spawnParticles(state, e.x, e.y, 12, e.col, 4, 28, 2);
+    sfx('dieChaser');
+    addShake(state, 3);
+  } else if (e.type === 'shooter') {
+    spawnPetalBurst(state, e.x, e.y, 12, e.col);
+    spawnParticles(state, e.x, e.y, 8, e.col, 2.5, 22, 2);
+    spawnParticles(state, e.x, e.y, 8, e.col, 6, 14, 1.5); // bullet scatter
+    sfx('dieShooter');
+    addShake(state, 3);
+  } else if (e.type === 'tank') {
+    spawnPetalBurst(state, e.x, e.y, 6, e.col);
+    spawnParticles(state, e.x, e.y, 22, e.col, 1.5, 40, 4.5); // heavy armored crumble
+    sfx('dieTank');
+    addShake(state, 6);
+  } else if (e.type === 'speeder') {
+    spawnPetalBurst(state, e.x, e.y, 28, e.col);
+    spawnParticles(state, e.x, e.y, 16, e.col, 6, 20, 1.5); // firework explosion
+    sfx('dieSpeeder');
+    addShake(state, 3.5);
+  } else if (e.type === 'splitter') {
+    spawnPetalBurst(state, e.x, e.y, 14, e.col);
+    spawnParticles(state, e.x, e.y, 10, e.col, 2.5, 28, 2.5);
+    spawnParticles(state, e.x, e.y, 6, e.col, 3.5, 22, 3); // tight split-pulse ring
+    sfx('dieSplitter');
+    addShake(state, 4);
+  } else if (e.type === 'stalker') {
+    spawnPetalBurst(state, e.x, e.y, 10, e.col);
+    spawnParticles(state, e.x, e.y, 8, e.col, 2.5, 30, 2);
+    // 4 shadow particles drifting in cardinal directions
+    const shadowCol = '#3a3a5a';
+    for (let k = 0; k < 4; k++) {
+      const ca = (k / 4) * Math.PI * 2;
+      state.particles.push({ x: e.x, y: e.y, vx: Math.cos(ca) * 2.5, vy: Math.sin(ca) * 2.5, col: shadowCol, life: 32, maxLife: 32, sz: 2.5 });
+    }
+    sfx('dieStalker');
+    addShake(state, 3.5);
+  } else if (e.type === 'boss') {
+    spawnPetalBurst(state, e.x, e.y, 60, e.col);
+    spawnParticles(state, e.x, e.y, 30, e.col, 5, 50, 3);
+    // 12-way radial burst
+    spawnParticles(state, e.x, e.y, 12, e.col, 9, 35, 2.5);
+    spawnText(state, e.x, e.y - e.r - 20, 'DEFEATED', PAL.combo, 16);
+    sfx('dieBoss');
+    addShake(state, 14);
+  } else {
+    // fallback for unknown types
+    spawnPetalBurst(state, e.x, e.y, 12, e.col);
+    spawnParticles(state, e.x, e.y, 7, e.col, 3, 32, 3);
+    sfx('die');
+    addShake(state, 3.5);
+  }
+
   state.seedDrops.push(...makeSeedDrops(e.x, e.y, e.seeds));
   if (Math.random() < 0.22) state.powerups.push(makePowerup(e.x, e.y));
   if (e.type === 'splitter') {
-    for (let k = 0; k < 2; k++) {
-      const mini = makeEnemy('chaser', e.x + rnd(-16, 16), e.y + rnd(-16, 16), state.wave);
-      mini.r = 7; mini.hp = mini.maxHp = Math.ceil(mini.maxHp * 0.4);
-      mini.speed *= 1.3; mini.seeds = 1; mini.score = 30;
+    for (let k = 0; k < 3; k++) {
+      const mini = makeEnemy('chaser', e.x + rnd(-20, 20), e.y + rnd(-20, 20), state.wave);
+      mini.r = 7; mini.hp = mini.maxHp = Math.ceil(mini.maxHp * 0.45);
+      mini.speed *= 1.55; mini.seeds = 1; mini.score = 30;
       state.enemies.push(mini); state.waveLeft++;
     }
   }
@@ -236,16 +316,19 @@ export function updEnemies(state: GameRunState, dt: number, onEndGame: EndGameFn
     if (state.spawnTimer <= 0) {
       const cfg = state.waveCfg;
       if (cfg && state.waveSpawned < cfg.types.length) {
-        const enemy = spawnAtEdge(cfg.types[state.waveSpawned], state.wave);
+        // Edge blitz: every 3rd enemy at wave 12+ spawns close to the player instead of the edge
+        let enemy;
+        if (state.wave >= 12 && state.waveSpawned % 3 === 2) {
+          const ta = rnd(0, Math.PI * 2);
+          const tr = rnd(80, 150);
+          const bx = clamp(state.player.x + Math.cos(ta) * tr, 10, W - 10);
+          const by = clamp(state.player.y + Math.sin(ta) * tr, 10, H - 10);
+          enemy = makeEnemy(cfg.types[state.waveSpawned], bx, by, state.wave);
+        } else {
+          enemy = spawnAtEdge(cfg.types[state.waveSpawned], state.wave);
+        }
         if (state.opponentNames && state.opponentNames.length > 0) {
           enemy.label = state.opponentNames[state.waveSpawned % state.opponentNames.length];
-        }
-        // Apply story difficulty multipliers if set
-        const dm = state.storyDiffMult;
-        if (dm) {
-          enemy.hp       = Math.ceil(enemy.hp * dm.hp);
-          enemy.maxHp    = enemy.hp;
-          enemy.speed    = enemy.speed * dm.speed;
         }
         state.enemies.push(enemy);
         state.waveSpawned++;
@@ -253,6 +336,12 @@ export function updEnemies(state: GameRunState, dt: number, onEndGame: EndGameFn
       }
     }
   }
+
+  // Damage scaling by wave — contact and bullet damage increase with wave number
+  const waveDmgMult = 1 + state.wave * 0.09;
+  // Boss damage escalates +30% per boss wave (wave 5 = ×1.0, wave 10 = ×1.3, wave 15 = ×1.69, …)
+  const bossWaveIndex = Math.floor(state.wave / 5); // 1 at wave 5, 2 at wave 10, …
+  const bossDmgMult = Math.pow(1.3, Math.max(0, bossWaveIndex - 1));
 
   const p = state.player;
   for (let i = state.enemies.length - 1; i >= 0; i--) {
@@ -278,12 +367,12 @@ export function updEnemies(state: GameRunState, dt: number, onEndGame: EndGameFn
       sy -= (dy / dist) * pushStr;
     }
 
-    // AI
+    // AI — wave-scaled parameters
     if (e.type === 'chaser') {
-      // Chasers weave side to side while approaching
-      const weave = Math.sin(e.life * 0.1) * 0.6;
-      e.vx += (dx / dist) * e.speed * 0.18 + (0 - dy / dist) * weave * e.speed * 0.1;
-      e.vy += (dy / dist) * e.speed * 0.18 + (dx / dist) * weave * e.speed * 0.1;
+      // Chasers weave aggressively, side-to-side intensity grows with wave
+      const weave = Math.sin(e.life * 0.13) * (1.4 + state.wave * 0.04);
+      e.vx += (dx / dist) * e.speed * 0.22 + (0 - dy / dist) * weave * e.speed * 0.18;
+      e.vy += (dy / dist) * e.speed * 0.22 + (dx / dist) * weave * e.speed * 0.18;
     } else if (e.type === 'tank') {
       // Tanks are relentless but slow, gaining speed below 50% HP
       const sp2 = e.hp < e.maxHp * 0.5 ? e.speed * 1.4 : e.speed;
@@ -295,50 +384,55 @@ export function updEnemies(state: GameRunState, dt: number, onEndGame: EndGameFn
       e.vx += (dx / dist + jitterX) * e.speed * 0.18; 
       e.vy += (dy / dist + jitterY) * e.speed * 0.18;
     } else if (e.type === 'speeder') {
-      // Speeders have erratic darting movement (charge, pause, charge)
-      const dart = Math.max(0.1, Math.sin(e.life * 0.15) * 1.5 + 0.3);
-      e.vx += (dx / dist) * e.speed * 0.2 * dart; 
-      e.vy += (dy / dist) * e.speed * 0.2 * dart;
+      // Speeders have wild erratic darting movement — high burst, sharp direction changes
+      const dart = Math.max(0.2, Math.sin(e.life * 0.22) * 2.2 + 0.6);
+      const sideDart = Math.cos(e.life * 0.18) * 0.5;
+      e.vx += (dx / dist) * e.speed * 0.28 * dart + (0 - dy / dist) * sideDart;
+      e.vy += (dy / dist) * e.speed * 0.28 * dart + (dx / dist) * sideDart;
     } else if (e.type === 'shooter') {
-      // Shooters orbit at ~210px, and retreat if player gets too close (< 180px)
-      const targetDist = 210; 
+      // Shooters orbit at wave-scaled distance, retreat aggressively if player gets close
+      const targetDist = Math.max(120, 180 - state.wave * 2);
       const diff = dist - targetDist;
       
-      if (dist < 180) {
-        // Retreat away from player while still orbiting
-        e.vx += (dx / dist) * diff * 0.008 + (0 - dy / dist) * 0.35;
-        e.vy += (dy / dist) * diff * 0.008 + (dx / dist) * 0.35;
+      if (dist < 150) {
+        // Aggressive retreat + sharp orbit
+        e.vx += (dx / dist) * diff * 0.012 + (0 - dy / dist) * 0.55;
+        e.vy += (dy / dist) * diff * 0.012 + (dx / dist) * 0.55;
       } else {
-        // Normal orbit
-        e.vx += (dx / dist) * diff * 0.004 + (0 - dy / dist) * 0.3;
-        e.vy += (dy / dist) * diff * 0.004 + (dx / dist) * 0.3;
+        // Tighter orbit with more speed
+        e.vx += (dx / dist) * diff * 0.006 + (0 - dy / dist) * 0.45;
+        e.vy += (dy / dist) * diff * 0.006 + (dx / dist) * 0.45;
       }
     } else if (e.type === 'boss') {
       const ph = e.hp < e.maxHp * 0.4 ? 2 : e.hp < e.maxHp * 0.7 ? 1 : 0;
       e.phase = ph;
-      const bsp = e.speed * (1 + ph * 0.5);
-      e.vx += (dx / dist) * bsp * 0.1; e.vy += (dy / dist) * bsp * 0.1;
-      if (Math.sin(e.life * 0.025) > 0.35) { e.vx += (0 - dy / dist) * 0.45; e.vy += (dx / dist) * 0.45; }
+      const bsp = e.speed * (1.3 + ph * 0.7);
+      e.vx += (dx / dist) * bsp * 0.14; e.vy += (dy / dist) * bsp * 0.14;
+      if (Math.sin(e.life * 0.028) > 0.25) { e.vx += (0 - dy / dist) * 0.65; e.vy += (dx / dist) * 0.65; }
     } else if (e.type === 'stalker') {
-      // Stalker: moves toward player, teleports every ~4 seconds with flicker telegraph
-      e.vx += (dx / dist) * e.speed * 0.16; e.vy += (dy / dist) * e.speed * 0.16;
+      // Stalker: aggressively pursues, teleports with wave-scaled frequency
+      e.vx += (dx / dist) * e.speed * 0.22; e.vy += (dy / dist) * e.speed * 0.22;
       if (e.flickering) {
         e.flickerTimer = (e.flickerTimer ?? 0) - dt;
         if ((e.flickerTimer ?? 0) <= 0) {
-          // Teleport to a random position near the player (80–180px away)
+          // Shadow particles at OLD position before teleport
+          sfx('stalkerTeleport');
+          spawnParticles(state, e.x, e.y, 6, '#3a3a5a', 2.5, 24, 2.5);
+          // Teleport very close to the player (40–110px away)
           const ta = rnd(0, Math.PI * 2);
-          const tr = rnd(80, 180);
+          const tr = rnd(40, 110);
           e.x = Math.max(e.r + 5, Math.min(W - e.r - 5, p.x + Math.cos(ta) * tr));
           e.y = Math.max(e.r + 5, Math.min(H - e.r - 5, p.y + Math.sin(ta) * tr));
           e.vx = 0; e.vy = 0;
           e.flickering = false;
-          e.teleportTimer = 200 + rnd(0, 80);
+          // Teleport timer shrinks with wave number
+          e.teleportTimer = Math.max(60, 120 - state.wave * 3) + rnd(0, 30);
         }
       } else {
-        e.teleportTimer = (e.teleportTimer ?? 240) - dt;
+        e.teleportTimer = (e.teleportTimer ?? 150) - dt;
         if ((e.teleportTimer ?? 0) <= 0) {
           e.flickering = true;
-          e.flickerTimer = 30; // 0.5s flicker before teleport
+          e.flickerTimer = 22; // ~0.37s flicker before teleport
         }
       }
     }
@@ -348,7 +442,7 @@ export function updEnemies(state: GameRunState, dt: number, onEndGame: EndGameFn
     e.x += e.vx * dt; e.y += e.vy * dt;
     if (e.type === 'speeder') { e.trail.push({ x: e.x, y: e.y }); if (e.trail.length > 8) e.trail.shift(); }
 
-    // Shooting with telegraph
+    // Shooting with telegraph — boss shoot interval tightens with wave
     if (e.type === 'shooter' || e.type === 'boss') {
       if (e.telegraphing) {
         e.telTimer -= dt;
@@ -357,13 +451,19 @@ export function updEnemies(state: GameRunState, dt: number, onEndGame: EndGameFn
           const ang = Math.atan2(dy, dx);
           if (e.type === 'boss') {
             const ph = e.phase ?? 0;
-            const n = ph >= 2 ? 9 : ph === 1 ? 7 : 5;
-            for (let k = 0; k < n; k++) state.bullets.push(makeBullet(e.x, e.y, (k / n) * Math.PI * 2, 4.5 + ph * 0.5, 4.5, e.col, 10 + ph * 3, true, false));
-            if (ph >= 1) state.bullets.push(makeBullet(e.x, e.y, ang, 7, 4, e.col, 14, true, false));
-            e.shootTimer = ph >= 2 ? 42 : ph === 1 ? 55 : 68;
+            const n = ph >= 2 ? 12 : ph === 1 ? 9 : 6;
+            for (let k = 0; k < n; k++) state.bullets.push(makeBullet(e.x, e.y, (k / n) * Math.PI * 2, 5.5 + ph * 0.8, 4.5, e.col, Math.round((12 + ph * 4) * waveDmgMult * bossDmgMult), true, false));
+            // Extra aimed shots in phase 1+
+            if (ph >= 1) state.bullets.push(makeBullet(e.x, e.y, ang, 9, 4, e.col, Math.round(18 * waveDmgMult * bossDmgMult), true, false));
+            if (ph >= 2) state.bullets.push(makeBullet(e.x, e.y, ang + 0.28, 8, 4, e.col, Math.round(16 * waveDmgMult * bossDmgMult), true, false));
+            if (ph >= 2) state.bullets.push(makeBullet(e.x, e.y, ang - 0.28, 8, 4, e.col, Math.round(16 * waveDmgMult * bossDmgMult), true, false));
+            // Boss shoot interval tightens with wave
+            e.shootTimer = ph >= 2 ? Math.max(16, 28 - state.wave) : ph === 1 ? Math.max(22, 40 - state.wave) : Math.max(30, 52 - state.wave * 1.5);
           } else {
-            state.bullets.push(makeBullet(e.x, e.y, ang + rnd(-0.5, 0.5) * 0.15, 4.5, 3.5, e.col, 9, true, false));
-            e.shootTimer = 80 + rnd(0, 30);
+            // Shooter fires a burst of 2 bullets
+            state.bullets.push(makeBullet(e.x, e.y, ang + rnd(-0.5, 0.5) * 0.18, 5.5, 3.5, e.col, Math.round(11 * waveDmgMult), true, false));
+            state.bullets.push(makeBullet(e.x, e.y, ang + rnd(-0.5, 0.5) * 0.28, 4.5, 3.5, e.col, Math.round(9 * waveDmgMult), true, false));
+            e.shootTimer = 55 + rnd(0, 20);
           }
         }
       } else {
@@ -372,18 +472,19 @@ export function updEnemies(state: GameRunState, dt: number, onEndGame: EndGameFn
       }
     }
 
-    // Contact damage + knockback
+    // Contact damage + knockback — scaled by wave
     if (dist < p.r + e.r + 2 && p.inv <= 0 && !state.shieldActive) {
-      const baseDmg = e.type === 'boss' ? 18 : e.type === 'tank' ? 13 : 9;
-      const cdmg = Math.round(baseDmg * state.stats.damageReduction);
+      const baseContactDmg = e.type === 'boss' ? 26 : e.type === 'tank' ? 20 : 14;
+      const scaledContactDmg = Math.round(baseContactDmg * waveDmgMult * (e.type === 'boss' ? bossDmgMult : 1));
+      const cdmg = Math.round(scaledContactDmg * state.stats.damageReduction);
       p.hp -= cdmg; p.inv = 60;
       // Knockback: push enemy away from player
-      const knockStr = e.type === 'boss' ? 3 : e.type === 'tank' ? 5 : 8;
+      const knockStr = e.type === 'boss' ? 4 : e.type === 'tank' ? 6 : 10;
       e.vx -= (dx / dist) * knockStr;
       e.vy -= (dy / dist) * knockStr;
-      addShake(state, e.type === 'boss' ? 10 : 6);
-      spawnParticles(state, p.x, p.y, 8, PAL.health, 3, 22, 2.5);
-      sfx('hurt');
+      addShake(state, e.type === 'boss' ? 16 : 10);
+      spawnParticles(state, p.x, p.y, 12, PAL.health, 4, 25, 3);
+      sfx(e.type === 'tank' || e.type === 'boss' ? 'hurtHeavy' : 'hurt');
       if (p.hp <= 0) { p.hp = 0; onEndGame(state); return; }
     }
 
@@ -394,7 +495,25 @@ export function updEnemies(state: GameRunState, dt: number, onEndGame: EndGameFn
       if (b.fromEnemy) continue;
       if (Math.hypot(b.x - e.x, b.y - e.y) < e.r + b.r) {
         e.hp -= b.dmg;
-        spawnParticles(state, b.x, b.y, 4, e.col, 1.8, 14, 2);
+        // Per-enemy hit particles
+        if (e.type === 'chaser') {
+          spawnParticles(state, b.x, b.y, 5, e.col, 2.5, 14, 2);
+        } else if (e.type === 'shooter') {
+          spawnParticles(state, b.x, b.y, 3, e.col, 2, 14, 2);
+        } else if (e.type === 'tank') {
+          spawnParticles(state, b.x, b.y, 7, e.col, 1.2, 18, 3.5); // slow heavy chunks
+        } else if (e.type === 'speeder') {
+          spawnParticles(state, b.x, b.y, 8, e.col, 4.5, 12, 1.5); // fast sparks
+        } else if (e.type === 'splitter') {
+          spawnParticles(state, b.x, b.y, 5, e.col, 2, 14, 2.5);
+        } else if (e.type === 'stalker') {
+          spawnParticles(state, b.x, b.y, 4, e.col, 2, 14, 2);
+          spawnParticles(state, b.x, b.y, 2, '#3a3a5a', 1.5, 12, 2); // shadow chips
+        } else if (e.type === 'boss') {
+          spawnParticles(state, b.x, b.y, 9, e.col, 2.5, 18, 3);
+        } else {
+          spawnParticles(state, b.x, b.y, 4, e.col, 1.8, 14, 2);
+        }
         sfx('hit'); addShake(state, 1.2);
         if (!b.pierce) state.bullets.splice(j, 1);
         else { b.hits++; if (b.hits >= 4) state.bullets.splice(j, 1); }
@@ -406,7 +525,7 @@ export function updEnemies(state: GameRunState, dt: number, onEndGame: EndGameFn
 
   // Wave complete
   if (!state.waveTrans && state.waveLeft <= 0 && state.waveSpawned >= state.waveTotal && state.enemies.length === 0) {
-    state.waveTrans = true; state.waveTransTimer = 100;
+    state.waveTrans = true; state.waveTransTimer = 120;
     spawnText(state, W / 2, H / 2, 'Harmony Restored', PAL.player, 14);
     state.player.hp = Math.min(state.player.maxHp, state.player.hp + 8);
     sfx('waveComplete');
@@ -415,30 +534,21 @@ export function updEnemies(state: GameRunState, dt: number, onEndGame: EndGameFn
     state.waveTransTimer -= dt;
     if (state.waveTransTimer <= 0) { state.waveTrans = false; beginWave(state, state.wave + 1); }
   }
+  if (state.waveAnnTimer > 0) state.waveAnnTimer -= dt;
 }
 
 // ── Wave ──────────────────────────────────────────────────────────────────────
 
 export function beginWave(state: GameRunState, w: number, cfgOverride?: WaveCfg): void {
   state.wave = w;
-  // Use provided cfg, or auto-select story cfg if chapter is set, or fall back to arcade cfg
-  let cfg: WaveCfg;
-  if (cfgOverride) {
-    cfg = cfgOverride;
-  } else if (state.storyChapterId != null) {
-    cfg = getStoryWaveCfg(state.storyChapterId, w);
-  } else {
-    cfg = getWaveCfg(w);
-  }
+  const cfg: WaveCfg = cfgOverride ?? getWaveCfg(w);
   state.waveCfg = cfg;
   state.waveTotal = cfg.count;
   state.waveLeft = cfg.count;
   state.waveSpawned = 0;
-  state.spawnTimer = 50;
-  state.spawnInterval = Math.max(16, 75 - w * 5);
-  // Use wave label from story config if available
-  const label = (cfg as { label?: string }).label;
-  spawnText(state, W / 2, H / 2 - 20, label ?? (w % 5 === 0 ? 'Boss Wave!' : 'Wave ' + w), PAL.muted, 13);
+  state.spawnTimer = 35;
+  state.spawnInterval = Math.max(8, 55 - w * 4);
+  state.waveAnnTimer = 180;
 }
 
 // ── Bullets ───────────────────────────────────────────────────────────────────

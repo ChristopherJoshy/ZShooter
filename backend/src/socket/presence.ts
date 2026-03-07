@@ -22,9 +22,12 @@ type AppSocket = Socket<ClientToServerEvents, ServerToClientEvents, InterServerE
 // Register presence event handlers on a socket
 // ──────────────────────────────────────────────────────────
 
-export function registerPresenceHandlers(io: IO, socket: AppSocket, redis: Redis): void {
+export function registerPresenceHandlers(io: IO, socket: AppSocket, redis: Redis | null): void {
   // ── presence:online ───────────────────────────────────
   socket.on('presence:online', async ({ userId, username }) => {
+    // Skip if Redis is unavailable
+    if (!redis) return;
+
     // Store socket ID → userId mapping
     await redis.setex(Keys.userSocket(userId), Keys.TTL.PRESENCE * 10, socket.id);
     await redis.setex(Keys.presence(userId), Keys.TTL.PRESENCE, 'online');
@@ -42,6 +45,9 @@ export function registerPresenceHandlers(io: IO, socket: AppSocket, redis: Redis
 
   // ── presence:in-match ─────────────────────────────────
   socket.on('presence:in-match', async ({ userId, mode }) => {
+    // Skip if Redis is unavailable
+    if (!redis) return;
+
     await redis.setex(Keys.presence(userId), Keys.TTL.PRESENCE * 40, 'in-match');
 
     await broadcastPresenceToFriends(io, redis, userId, 'in-match', mode);
@@ -49,14 +55,17 @@ export function registerPresenceHandlers(io: IO, socket: AppSocket, redis: Redis
 
   // ── presence:offline ──────────────────────────────────
   socket.on('presence:offline', async ({ userId }) => {
+    // Skip if Redis is unavailable
+    if (!redis) return;
+
     await handleOffline(io, redis, userId);
   });
 
-  // ── disconnect ────────────────────────────────────────
+  // ── disconnect ───────────────────────────────────────
   // Clean up presence when socket drops (tab close, network loss)
   socket.on('disconnect', async () => {
     const userId = socket.data.userId;
-    if (!userId) return;
+    if (!userId || !redis) return;
     await handleOffline(io, redis, userId);
   });
 }

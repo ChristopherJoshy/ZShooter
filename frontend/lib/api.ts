@@ -1,9 +1,9 @@
 // HTTP client for all backend API calls.
 // All requests go through Next.js rewrites (/api/* → backend).
+// Never use a public env var for the backend URL — requests always go to /api on the same origin.
 import type { GameSave } from './game/types';
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || '';
-const BASE = API_URL ? `${API_URL.replace(/\/+$/, '')}/api` : '/api';
+const BASE = '/api';
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(BASE + path, {
@@ -41,7 +41,7 @@ export function apiLogout(): Promise<{ ok: boolean }> {
 
 // ── User ───────────────────────────────────────────────────────────────────────
 
-export type UserProfile = Omit<GameSave, 'profile' | 'ranked' | 'story' | 'inventory' | 'pityCount'> & {
+export type UserProfile = Omit<GameSave, 'profile' | 'ranked' | 'inventory' | 'pityCount'> & {
   userId: string;
   username: string;
   createdAt?: string;
@@ -91,14 +91,6 @@ export type UserProfile = Omit<GameSave, 'profile' | 'ranked' | 'story' | 'inven
   pity?: {
     pullsSinceLastLegendary: number;
   };
-  story?: {
-    completedChapters: Array<{
-      chapterId: number;
-      difficulty: 'calm' | 'balanced' | 'tempest';
-      completedAt: string;
-    }>;
-    fullClearDate: string | null;
-  };
   runHistory?: Array<{
     wave: number;
     score: number;
@@ -125,6 +117,7 @@ export interface LeaderboardEntry {
   userId: string;
   username: string;
   highScore: number;
+  highestWave?: number;
   totalRuns: number;
   rp?: number;
   mmr?: number;
@@ -135,7 +128,7 @@ export interface LeaderboardEntry {
 export interface LeaderboardParams {
   limit?: number;
   offset?: number;
-  scope?: 'ranked' | 'score';
+  scope?: 'ranked' | 'score' | 'wave';
 }
 
 export function apiGetLeaderboard(params?: LeaderboardParams): Promise<LeaderboardEntry[]> {
@@ -147,7 +140,7 @@ export function apiGetLeaderboard(params?: LeaderboardParams): Promise<Leaderboa
   return request(`/leaderboard${query}`);
 }
 
-export function apiGetMyRank(scope: 'ranked' | 'score' = 'ranked'): Promise<LeaderboardEntry> {
+export function apiGetMyRank(scope: 'ranked' | 'score' | 'wave' = 'ranked'): Promise<LeaderboardEntry> {
   return request(`/leaderboard/me?scope=${scope}`);
 }
 
@@ -204,15 +197,6 @@ export function apiFriendDecline(friendId: string): Promise<{ ok: boolean }> {
 
 export function apiFriendRemove(friendId: string): Promise<{ ok: boolean }> {
   return request('/friends/remove', { method: 'POST', body: JSON.stringify({ friendId }) });
-}
-
-// ── Story ──────────────────────────────────────────────────────────────────────
-
-export function apiCompleteChapter(payload: {
-  chapterId: number;
-  difficulty: 'calm' | 'balanced' | 'tempest';
-}): Promise<{ ok: boolean; fullClear: boolean }> {
-  return request('/story/complete', { method: 'POST', body: JSON.stringify(payload) });
 }
 
 // ── Match result ───────────────────────────────────────────────────────────────

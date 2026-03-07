@@ -21,6 +21,10 @@ export interface SocketState {
   reconnecting: boolean;
   /** Latency in ms, tracked via socket.io ping/pong */
   ping: number;
+  /** True when the backend server is reachable (checked after reconnect failures) */
+  serverAvailable: boolean;
+  /** True once the socket has successfully connected at least once this session */
+  hasEverConnected: boolean;
 }
 
 // ── Matchmaking types ──────────────────────────────────────────────────────────
@@ -70,6 +74,8 @@ const INITIAL_STATE: SocketState = {
   incomingRequest: null,
   reconnecting: false,
   ping: 0,
+  serverAvailable: true,
+  hasEverConnected: false,
 };
 
 // ── Hook ──────────────────────────────────────────────────────────────────────
@@ -87,9 +93,25 @@ export function useSocket(userId: string | null, username: string | null) {
   const [mmState, setMmState] = useState<MatchmakingState>(INITIAL_MM_STATE);
   const [lobbyStartTick, setLobbyStartTick] = useState(0);
   const socketRef             = useRef<Socket | null>(null);
+  const retryIntervalRef     = useRef<ReturnType<typeof setInterval> | null>(null);
+  const isConnectingRef      = useRef(false);
 
   const clearIncomingRequest = useCallback(() => {
     setState((s) => ({ ...s, incomingRequest: null }));
+  }, []);
+
+  // ── Server availability check ───────────────────────────────
+  /** Check if the backend server is reachable */
+  const checkServerAvailable = useCallback(async (): Promise<boolean> => {
+    try {
+      const res = await fetch('/api/auth/token', { 
+        credentials: 'include',
+        cache: 'no-store',
+      });
+      return res.ok;
+    } catch {
+      return false;
+    }
   }, []);
 
   // ── Matchmaking actions ────────────────────────────────
@@ -112,24 +134,35 @@ export function useSocket(userId: string | null, username: string | null) {
     socket.emit('matchmaking:cancel', { userId });
   }, [userId]);
 
-  useEffect(() => {
-    if (!userId || !username) return;
-
+  // ── Connect function ────────────────────────────────────────
+  const connect = useCallback(() => {
+    if (isConnectingRef.current || !userId || !username) return;
+    
+    isConnectingRef.current = true;
+    
     let cancelled = false;
 
-    async function connect() {
+    async function doConnect() {
       // Fetch token for socket handshake
       let token: string;
       try {
         const res = await fetch('/api/auth/token', { credentials: 'include' });
-        if (!res.ok) return;
+        if (!res.ok) {
+          isConnectingRef.current = false;
+          return;
+        }
         const data = await res.json() as { token: string };
         token = data.token;
       } catch {
-        return; // Non-fatal — socket features simply won't be available
+        isConnectingRef.current = false;
+        // Non-fatal — socket features simply won't be available
+        return;
       }
 
-      if (cancelled) return;
+      if (cancelled) {
+        isConnectingRef.current = false;
+        return;
+      }
 
       const apiUrl = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000';
 
@@ -144,7 +177,8 @@ export function useSocket(userId: string | null, username: string | null) {
 
       socket.on('connect', () => {
         if (cancelled) return;
-        setState((s) => ({ ...s, connected: true, reconnecting: false }));
+        isConnectingRef.current = false;
+        setState((s) => ({ ...s, connected: true, reconnecting: false, serverAvailable: true, hasEverConnected: true }));
         // Announce presence
         socket.emit('presence:online', { userId: userId!, username: username! });
       });
@@ -163,7 +197,16 @@ export function useSocket(userId: string | null, username: string | null) {
 
       socket.io.on('reconnect_failed', () => {
         if (cancelled) return;
-        setState((s) => ({ ...s, reconnecting: false, connected: false }));
+        isConnectingRef.current = false;
+        // Check if server is available after all reconnection attempts fail
+        checkServerAvailable().then((available) => {
+          setState((s) => ({ 
+            ...s, 
+            reconnecting: false, 
+            connected: false,
+            serverAvailable: available,
+          }));
+        });
       });
 
       let lastPingDate = Date.now();
@@ -173,72 +216,81 @@ export function useSocket(userId: string | null, username: string | null) {
 
       // socket.io-client TS types don't include 'pong' as a literal event name on Manager
       // We cast to any to attach the event listener for latency tracking
-      (socket.io as any).on('pong', () => {
+      (socket.io as unknown as { on: (event: string, cb: () => void) => void }).on('pong', () => {
         if (cancelled) return;
         setState((s) => ({ ...s, ping: Date.now() - lastPingDate }));
       });
 
-      socket.on('presence:update', (payload: any) => {
+      socket.on('presence:update', (payload: unknown) => {
         if (cancelled) return;
+        const p = payload as { userId: string; status: PresenceStatus };
         setState((s) => ({
           ...s,
-          presenceMap: { ...s.presenceMap, [payload.userId]: payload.status },
+          presenceMap: { ...s.presenceMap, [p.userId]: p.status },
         }));
       });
 
-      socket.on('friend:request-received', (payload: any) => {
+      socket.on('friend:request-received', (payload: unknown) => {
         if (cancelled) return;
+        const p = payload as { fromUserId: string; fromUsername: string };
         setState((s) => ({
           ...s,
-          incomingRequest: { fromUserId: payload.fromUserId, fromUsername: payload.fromUsername },
+          incomingRequest: { fromUserId: p.fromUserId, fromUsername: p.fromUsername },
         }));
       });
 
       // ── Matchmaking events ─────────────────────────────
-      socket.on('matchmaking:waiting', (payload: any) => {
+      socket.on('matchmaking:waiting', (payload: unknown) => {
         if (cancelled) return;
+        const p = payload as { position: number; estimatedWaitSeconds: number; expandedRange: boolean };
         setMmState((s) => ({
           ...s,
           status:  'queuing',
           waiting: {
-            position:             payload.position,
-            estimatedWaitSeconds: payload.estimatedWaitSeconds,
-            expandedRange:        payload.expandedRange,
+            position:             p.position,
+            estimatedWaitSeconds: p.estimatedWaitSeconds,
+            expandedRange:        p.expandedRange,
           },
         }));
       });
 
-      socket.on('matchmaking:found', (payload: any) => {
+      socket.on('matchmaking:found', (payload: unknown) => {
         if (cancelled) return;
+        const p = payload as { 
+          lobbyId: string; 
+          players: Array<{ userId: string; username: string; mmr: number }>;
+          bots: Array<{ botId: string; name: string; mmr: number }>;
+        };
         setMmState({
           status: 'found',
           waiting: null,
           lobby: {
-            lobbyId: payload.lobbyId,
-            players: (payload.players as Array<{ userId: string; username: string; mmr: number }>).map((p) => ({
-              userId:   p.userId,
-              username: p.username,
-              mmr:      p.mmr,
+            lobbyId: p.lobbyId,
+            players: p.players.map((player) => ({
+              userId:   player.userId,
+              username: player.username,
+              mmr:      player.mmr,
             })),
-            bots: (payload.bots as Array<{ botId: string; name: string; mmr: number }>).map((b) => ({
-              botId: b.botId,
-              name:  b.name,
-              mmr:   b.mmr,
+            bots: p.bots.map((bot) => ({
+              botId: bot.botId,
+              name:  bot.name,
+              mmr:   bot.mmr,
             })),
             countdownSeconds: null,
           },
         });
       });
 
-      socket.on('lobby:update', (payload: any) => {
+      socket.on('lobby:update', (payload: unknown) => {
         if (cancelled) return;
+        const p = payload as { lobbyId: string; countdownSeconds: number | null };
         setMmState((s) => {
-          if (!s.lobby || s.lobby.lobbyId !== payload.lobbyId) return s;
+          if (!s.lobby || s.lobby.lobbyId !== p.lobbyId) return s;
           return {
             ...s,
             lobby: {
               ...s.lobby,
-              countdownSeconds: payload.countdownSeconds,
+              countdownSeconds: p.countdownSeconds,
             },
           };
         });
@@ -253,10 +305,58 @@ export function useSocket(userId: string | null, username: string | null) {
       });
     }
 
-    connect().catch(() => null);
+    doConnect().catch(() => {
+      isConnectingRef.current = false;
+    });
+  }, [userId, username, checkServerAvailable]);
+
+  // ── Retry connection (manual or periodic) ──────────────────
+  const retryConnection = useCallback(async () => {
+    // Check if server is available first
+    const available = await checkServerAvailable();
+    if (!available) {
+      setState((s) => ({ ...s, serverAvailable: false }));
+      return;
+    }
+    
+    // Server is available, reset state and reconnect
+    setState((s) => ({ ...s, serverAvailable: true }));
+    
+    // Disconnect existing socket if any
+    if (socketRef.current) {
+      socketRef.current.disconnect();
+      socketRef.current = null;
+    }
+    
+    // Trigger reconnection
+    connect();
+  }, [checkServerAvailable, connect]);
+
+  // ── Periodic retry check (every 30s) ─────────────────────────────
+  useEffect(() => {
+    // Only start periodic checks if server is unavailable
+    if (!state.serverAvailable) {
+      retryIntervalRef.current = setInterval(() => {
+        retryConnection();
+      }, 30000); // 30 seconds
+    }
 
     return () => {
-      cancelled = true;
+      if (retryIntervalRef.current) {
+        clearInterval(retryIntervalRef.current);
+        retryIntervalRef.current = null;
+      }
+    };
+  }, [state.serverAvailable, retryConnection]);
+
+  // ── Initial connection on mount ───────────────────────────────
+  useEffect(() => {
+    if (!userId || !username) return;
+    
+    // Initial connection attempt
+    connect();
+
+    return () => {
       const socket = socketRef.current;
       if (socket) {
         const uid = userId;
@@ -264,10 +364,12 @@ export function useSocket(userId: string | null, username: string | null) {
         socket.disconnect();
         socketRef.current = null;
       }
-      setState(INITIAL_STATE);
-      setMmState(INITIAL_MM_STATE);
+      if (retryIntervalRef.current) {
+        clearInterval(retryIntervalRef.current);
+        retryIntervalRef.current = null;
+      }
     };
-  }, [userId, username]);
+  }, [userId, username, connect]);
 
   return {
     socketState: state,
@@ -275,6 +377,8 @@ export function useSocket(userId: string | null, username: string | null) {
     clearIncomingRequest,
     queueForMatch,
     cancelMatch,
+    /** Retry connection manually (e.g., user clicked a retry button) */
+    retryConnection,
     /** Increments each time `lobby:start` fires — use as a useEffect dependency */
     onLobbyStart: lobbyStartTick,
   };

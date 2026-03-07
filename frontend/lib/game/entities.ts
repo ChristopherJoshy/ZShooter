@@ -43,24 +43,25 @@ export function makeBullet(
 }
 
 export function makeEnemy(type: EnemyType, x: number, y: number, waveN: number): Enemy {
-  const sc = 1 + Math.max(0, waveN - 1) * 0.13;
+  const sc = 1 + Math.max(0, waveN - 1) * 0.18;
+  const spMult = 1 + waveN * 0.025;
   const e: Enemy = {
     x, y, vx: 0, vy: 0, type, life: 0, trail: [],
     shootTimer: 0, telegraphing: false, telTimer: 0,
     col: PAL.E[type as keyof typeof PAL.E] ?? '#888',
     r: 10, hp: 0, maxHp: 0, speed: 0, score: 0, seeds: 0,
   };
-  if (type === 'chaser')   { e.r = 9;   e.hp = e.maxHp = Math.ceil(32 * sc);  e.speed = 1.95 + waveN * 0.03;  e.score = 60;  e.seeds = 1; }
-  if (type === 'shooter')  { e.r = 10;  e.hp = e.maxHp = Math.ceil(48 * sc);  e.speed = 0.98 + waveN * 0.02; e.score = 100; e.seeds = 2; e.shootTimer = 90; }
-  if (type === 'tank')     { e.r = 17;  e.hp = e.maxHp = Math.ceil(120 * sc); e.speed = 0.78 + waveN * 0.015; e.score = 200; e.seeds = 4; }
-  if (type === 'speeder')  { e.r = 7;   e.hp = e.maxHp = Math.ceil(20 * sc);  e.speed = 3.9 + waveN * 0.04;  e.score = 80;  e.seeds = 1; }
-  if (type === 'splitter') { e.r = 12;  e.hp = e.maxHp = Math.ceil(50 * sc);  e.speed = 1.43 + waveN * 0.02;  e.score = 130; e.seeds = 2; }
-  if (type === 'boss')     { e.r = 26;  e.hp = e.maxHp = Math.ceil(450 * sc); e.speed = 1.17 + waveN * 0.02;  e.score = 800; e.seeds = 15; e.shootTimer = 55; e.phase = 0; }
+  if (type === 'chaser')   { e.r = 9;   e.hp = e.maxHp = Math.ceil(40 * sc);   e.speed = (1.85 + waveN * 0.03) * spMult;  e.score = 60;  e.seeds = 1; }
+  if (type === 'shooter')  { e.r = 10;  e.hp = e.maxHp = Math.ceil(55 * sc);   e.speed = (0.95 + waveN * 0.02) * spMult;  e.score = 100; e.seeds = 2; e.shootTimer = 90; }
+  if (type === 'tank')     { e.r = 17;  e.hp = e.maxHp = Math.ceil(150 * sc);  e.speed = (0.75 + waveN * 0.015) * spMult; e.score = 200; e.seeds = 4; }
+  if (type === 'speeder')  { e.r = 7;   e.hp = e.maxHp = Math.ceil(24 * sc);   e.speed = (3.7 + waveN * 0.04) * spMult;   e.score = 80;  e.seeds = 1; }
+  if (type === 'splitter') { e.r = 12;  e.hp = e.maxHp = Math.ceil(60 * sc);   e.speed = (1.38 + waveN * 0.02) * spMult;  e.score = 130; e.seeds = 2; }
+  if (type === 'boss')     { e.r = 26;  e.hp = e.maxHp = Math.ceil(520 * sc);  e.speed = (1.1 + waveN * 0.02) * spMult;   e.score = 800; e.seeds = 15; e.shootTimer = 60; e.phase = 0; }
   // Stalker: teleports every ~4 seconds with a flicker telegraph; medium HP, fast
   if (type === 'stalker')  {
     e.r = 10;
-    e.hp = e.maxHp = Math.ceil(60 * sc);
-    e.speed = 2.86 + waveN * 0.03;
+    e.hp = e.maxHp = Math.ceil(72 * sc);
+    e.speed = (2.7 + waveN * 0.03) * spMult;
     e.score = 150;
     e.seeds = 3;
     e.teleportTimer = 240; // 4s at 60fps

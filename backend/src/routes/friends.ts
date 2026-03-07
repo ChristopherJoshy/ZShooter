@@ -25,6 +25,15 @@ export default async function friendsRoutes(fastify: FastifyInstance) {
     // Fetch presence for each accepted friend in parallel
     const friendsWithStatus = await Promise.all(
       accepted.map(async (f) => {
+        // If Redis is unavailable, return offline status
+        if (!redis) {
+          return {
+            userId: f.userId,
+            username: f.username,
+            addedAt: f.addedAt,
+            status: 'offline' as const,
+          };
+        }
         const raw = await redis.get(`presence:${f.userId}`).catch(() => null);
         const status: 'online' | 'in-match' | 'offline' =
           raw === 'online' ? 'online' : raw === 'in-match' ? 'in-match' : 'offline';

@@ -1,49 +1,19 @@
 'use client';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo } from 'react';
 import { GameProvider, useGame } from '@/context/GameContext';
 import { startAudio } from '@/lib/game/audio';
 import GameCanvas from '@/components/game/GameCanvas';
 import ResultsScreen from '@/components/game/ResultsScreen';
+import NetworkLostScreen from '@/components/game/NetworkLostScreen';
 import GameHub from '@/components/game/GameHub';
 import { useGameScale } from '@/hooks/useGameScale';
 import { useSocket } from '@/hooks/useSocket';
 import type { UserProfile } from '@/lib/api';
-import type { GameSave, WeaponId, StoryDifficulty } from '@/lib/game/types';
+import type { GameSave, WeaponId } from '@/lib/game/types';
 import { normalizeProfileToSave } from '@/lib/profile';
 
 function buildSaveFromProfile(profile: UserProfile): GameSave {
   return normalizeProfileToSave(profile);
-}
-
-function NetworkLostOverlay() {
-  const [offline, setOffline] = useState(false);
-
-  useEffect(() => {
-    const goOffline = () => setOffline(true);
-    const goOnline = () => setOffline(false);
-    if (!navigator.onLine) setOffline(true);
-    window.addEventListener('offline', goOffline);
-    window.addEventListener('online', goOnline);
-    return () => {
-      window.removeEventListener('offline', goOffline);
-      window.removeEventListener('online', goOnline);
-    };
-  }, []);
-
-  if (!offline) return null;
-
-  return (
-    <div className="net-lost-overlay">
-      <div className="net-lost-icon">⚡</div>
-      <div className="net-lost-title">Connection Lost</div>
-      <div className="net-lost-sub">
-        Your internet connection dropped. The game will resume automatically when you reconnect.
-      </div>
-      <button className="net-lost-retry" onClick={() => window.location.reload()}>
-        Retry now
-      </button>
-    </div>
-  );
 }
 
 // Inner component — has access to GameContext.
@@ -53,11 +23,9 @@ function GameInner({ username, userId }: { username: string; userId: string }) {
     gameState, setGameState,
     lastResult, lastRankedResult, setLastRankedResult,
     gameMode, setGameMode,
-    storyChapter, setStoryChapter,
-    storyDifficulty, setStoryDifficulty,
   } = useGame();
   const { isTouch } = useGameScale();
-  const { socketState, matchmakingState, queueForMatch, cancelMatch, onLobbyStart } = useSocket(userId, username);
+  const { socketState, matchmakingState, queueForMatch, cancelMatch, onLobbyStart, retryConnection } = useSocket(userId, username);
 
   // When lobby:start fires, transition into ranked playing mode
   useEffect(() => {
@@ -148,27 +116,16 @@ function GameInner({ username, userId }: { username: string; userId: string }) {
   const handleReturn = useCallback(() => {
     setLastRankedResult(null);
     setGameMode('arcade');
-    setStoryChapter(null);
-    setStoryDifficulty(null);
     setGameState('garden');
-  }, [setGameState, setLastRankedResult, setGameMode, setStoryChapter, setStoryDifficulty]);
+  }, [setGameState, setLastRankedResult, setGameMode]);
 
   const handleLogout = useCallback(async () => {
     await import('@/lib/api').then(({ apiLogout }) => apiLogout());
     window.location.href = '/';
   }, []);
 
-  // ── Mode select handlers ──────────────────────────────────────────────────────
-
-  const handlePlayStory = useCallback((chapterId: number, difficulty: StoryDifficulty) => {
-    startAudio();
-    setGameMode('story');
-    setStoryChapter(chapterId);
-    setStoryDifficulty(difficulty);
-    setGameState('playing');
-  }, [setGameMode, setStoryChapter, setStoryDifficulty, setGameState]);
-
   const isHighScore = (lastResult?.score ?? 0) >= save.highScore && (lastResult?.score ?? 0) > 0;
+  const isNewWaveRecord = (lastResult?.wave ?? 0) > (save.highestWave ?? 0);
   const opponentNames = useMemo(() => [
     ...(matchmakingState.lobby?.players ?? []).filter((player) => player.userId !== userId).map((player) => player.username),
     ...(matchmakingState.lobby?.bots ?? []).map((bot) => bot.name),
@@ -195,7 +152,6 @@ function GameInner({ username, userId }: { username: string; userId: string }) {
         onBuyAbility={handleBuyAbility}
         onSaveProfile={handleSaveProfile}
         onPlayArcade={handlePlayArcade}
-        onPlayStory={handlePlayStory}
         onLogout={handleLogout}
       />
       <ResultsScreen
@@ -205,13 +161,20 @@ function GameInner({ username, userId }: { username: string; userId: string }) {
         kills={lastResult?.kills ?? 0}
         seedsEarned={lastResult?.seedsEarned ?? 0}
         isHighScore={isHighScore}
+        isNewWaveRecord={isNewWaveRecord}
         weapon={lastResult?.weapon ?? 'seedShot'}
         ability={lastResult?.ability ?? 'none'}
+        died={lastResult?.died ?? false}
         gameMode={gameMode}
         rankedResult={lastRankedResult}
         onReturn={handleReturn}
       />
-      <NetworkLostOverlay />
+      <NetworkLostScreen
+        isReconnecting={socketState.hasEverConnected && (socketState.reconnecting || !socketState.connected)}
+        serverAvailable={socketState.serverAvailable}
+        onReturnToGarden={handleReturn}
+        onRetry={retryConnection}
+      />
     </div>
   );
 }

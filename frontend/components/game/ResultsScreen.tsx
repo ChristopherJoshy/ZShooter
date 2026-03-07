@@ -18,15 +18,17 @@ interface ResultsScreenProps {
   kills: number;
   seedsEarned: number;
   isHighScore: boolean;
+  isNewWaveRecord?: boolean;
   weapon: string;
   ability: string;
+  died?: boolean;
   gameMode?: GameMode;
   rankedResult?: RankedResult | null;
   onReturn: () => void;
 }
 
 export default function ResultsScreen({
-  visible, wave, score, kills, seedsEarned, isHighScore, weapon, ability, gameMode, rankedResult, onReturn,
+  visible, wave, score, kills, seedsEarned, isHighScore, isNewWaveRecord, weapon, ability, died, gameMode, rankedResult, onReturn,
 }: ResultsScreenProps) {
   const weaponDef = WEAPON_DEFS.find((w) => w.id === weapon);
   const abilityDef = ABILITY_DEFS.find((a) => a.id === ability);
@@ -34,7 +36,7 @@ export default function ResultsScreen({
   const burstFiredRef = useRef(false);
 
   useEffect(() => {
-    if (!visible || !isHighScore || burstFiredRef.current) return;
+    if (!visible || (!isHighScore && !isNewWaveRecord) || burstFiredRef.current) return;
     if (!sparkleRef.current) return;
     burstFiredRef.current = true;
     const container = sparkleRef.current;
@@ -59,11 +61,10 @@ export default function ResultsScreen({
       clearTimeout(cleanup);
       particles.forEach((p) => { if (p.parentNode) p.remove(); });
     };
-  }, [visible, isHighScore]);
+  }, [visible, isHighScore, isNewWaveRecord]);
 
   const isRanked = gameMode === 'ranked';
-  const isStory  = gameMode === 'story';
-  const modeLabel = isRanked ? 'Ranked' : isStory ? 'Story' : null;
+  const modeLabel = isRanked ? 'Ranked' : null;
 
   return (
     <div id="resultsScreen" className={'fullscreen' + (visible ? '' : ' hidden')}>
@@ -71,8 +72,8 @@ export default function ResultsScreen({
       <div className="rd">
         <GameIcon name={isHighScore ? 'trophy' : 'spark'} className="results-mark-icon" />
       </div>
-      <div className="rt">{isHighScore ? 'New Best' : 'Run Complete'}</div>
-      <div className="rs">{isHighScore ? 'New record' : ''}</div>
+      <div className="rt">{isHighScore ? 'New Best' : died ? 'You Died' : 'Run Complete'}</div>
+      <div className="rs">{isHighScore ? 'New record' : isNewWaveRecord ? 'Wave record' : ''}</div>
       {modeLabel && <div className="results-mode-badge">{modeLabel}</div>}
       <div className="divider" />
       <div className="rgrid">

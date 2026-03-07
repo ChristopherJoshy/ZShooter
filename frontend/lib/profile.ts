@@ -8,8 +8,6 @@ import type {
   OwnedCosmetic,
   PlayerProfile,
   RankedProgress,
-  StoryChapterProgress,
-  StoryProgressState,
 } from './game/types';
 import { defaultSave } from '@/context/GameContext';
 
@@ -102,26 +100,13 @@ function mapRanked(profile: UserProfile): RankedProgress {
   };
 }
 
-function mapStory(profile: UserProfile): StoryProgressState {
-  const completedChapters: StoryChapterProgress[] = (profile.story?.completedChapters ?? []).map((chapter) => ({
-    chapterId: chapter.chapterId,
-    difficulty: chapter.difficulty,
-    completedAt: new Date(chapter.completedAt).getTime(),
-  }));
-
-  return {
-    completedChapters,
-    fullClearDate: profile.story?.fullClearDate ? new Date(profile.story.fullClearDate).getTime() : null,
-  };
-}
-
 export function normalizeProfileToSave(profile: UserProfile): GameSave {
   const fallback = defaultSave();
-  const story = mapStory(profile);
 
   return {
     seeds: profile.seeds ?? fallback.seeds,
     highScore: profile.highScore ?? fallback.highScore,
+    highestWave: profile.highestWave ?? fallback.highestWave,
     totalRuns: profile.totalRuns ?? fallback.totalRuns,
     up: profile.up ?? fallback.up,
     weapons: profile.weapons ?? fallback.weapons,
@@ -133,8 +118,6 @@ export function normalizeProfileToSave(profile: UserProfile): GameSave {
     inventory: mapInventory(profile),
     runHistory: profile.runHistory ?? fallback.runHistory,
     stats: mapStats(profile),
-    storyProgress: story.completedChapters,
     ranked: mapRanked(profile),
-    story,
   };
 }

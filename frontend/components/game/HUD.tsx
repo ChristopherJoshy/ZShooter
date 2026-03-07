@@ -1,5 +1,5 @@
 'use client';
-import { ABIL_CD, ABILITY_DEFS } from '@/lib/game/constants';
+import { ABIL_CD, ABILITY_DEFS, COMBO_DUR } from '@/lib/game/constants';
 import { useGame } from '@/context/GameContext';
 import type { GameRunState } from '@/lib/game/types';
 
@@ -21,7 +21,7 @@ export default function HUD({ state }: HUDProps) {
   const abilDef = ABILITY_DEFS.find((a) => a.id === stats.ability);
   const abilReady = abilityCooldown <= 0 && showAbility;
   const showCombo = combo > 1 && comboTimer > 0;
-  const comboPct = Math.max(0, (comboTimer / 140) * 100);
+  const comboPct = Math.max(0, (comboTimer / COMBO_DUR) * 100);
 
   let botText = '';
   if (player.reloading) {

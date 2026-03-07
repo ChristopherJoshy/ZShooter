@@ -85,7 +85,7 @@ async function buildLobbyPlayer(userId: string, mmr: number): Promise<LobbyPlaye
 
 async function formLobby(
   io: IO,
-  redis: Redis,
+  redis: Redis | null,
   entries: QueueEntry[],
   fillWithBots: boolean,
 ): Promise<void> {
@@ -107,7 +107,7 @@ async function formLobby(
     }
   }
 
-  // Persist lobby state in Redis
+  // Persist lobby state in Redis (if available)
   const lobbyState = { lobbyId, matchId, players, bots, countdownSeconds: null as number | null };
   if (redis) {
     redis
@@ -115,7 +115,7 @@ async function formLobby(
       .catch(() => {});
   }
 
-  // Remove players from the sorted-set queue
+  // Remove players from the sorted-set queue (if Redis available)
   const queueKey = mmQueue(entries[0]?.region ?? REGION_DEFAULT);
   if (redis) {
     redis.zrem(queueKey, ...entries.map((e) => e.userId)).catch(() => {});
@@ -169,13 +169,24 @@ async function formLobby(
 
 function startPoll(
   io: IO,
-  redis: Redis,
+  redis: Redis | null,
+  redisAvailable: boolean,
   entry: QueueEntry,
 ): void {
   const timer = setInterval(async () => {
     // Re-check the entry is still in registry (may have been matched already)
     if (!queueRegistry.has(entry.socketId)) {
       clearInterval(timer);
+      return;
+    }
+
+    // If Redis became unavailable, emit error and remove from queue
+    if (!redis || !redisAvailable) {
+      clearInterval(timer);
+      queueRegistry.delete(entry.socketId);
+      io.to(entry.socketId).emit('matchmaking:error', {
+        message: 'Ranked unavailable - Redis connection failed',
+      });
       return;
     }
 
@@ -245,12 +256,21 @@ function startPoll(
 export function registerMatchmakingHandlers(
   io: IO,
   socket: Socket<ClientToServerEvents, ServerToClientEvents, InterServerEvents, SocketData>,
-  redis: Redis,
+  redis: Redis | null,
+  redisAvailable: boolean,
 ): void {
   const { userId, username } = socket.data;
 
   // ── matchmaking:queue ─────────────────────────────────
   socket.on('matchmaking:queue', async (payload) => {
+    // Check if Redis is available for ranked matchmaking
+    if (!redis || !redisAvailable) {
+      socket.emit('matchmaking:error', {
+        message: 'Ranked unavailable - Redis connection failed',
+      });
+      return;
+    }
+
     // Guard: don't let the same user queue twice
     for (const [, e] of queueRegistry) {
       if (e.userId === userId) return;
@@ -285,10 +305,10 @@ export function registerMatchmakingHandlers(
       expandedRange:        false,
     });
 
-    startPoll(io, redis, entry);
+    startPoll(io, redis, redisAvailable, entry);
   });
 
-  // ── matchmaking:cancel ────────────────────────────────
+  // ── matchmaking:cancel ───────────────────────────────
   socket.on('matchmaking:cancel', async () => {
     const entry = queueRegistry.get(socket.id);
     if (!entry) return;
@@ -296,8 +316,11 @@ export function registerMatchmakingHandlers(
     clearInterval(entry.pollTimer);
     queueRegistry.delete(socket.id);
 
-    const queueKey = mmQueue(entry.region);
-    await redis.zrem(queueKey, entry.userId).catch(() => {});
+    // Remove from Redis if available
+    if (redis) {
+      const queueKey = mmQueue(entry.region);
+      await redis.zrem(queueKey, entry.userId).catch(() => {});
+    }
   });
 
   // ── Cleanup on disconnect ─────────────────────────────
@@ -308,7 +331,10 @@ export function registerMatchmakingHandlers(
     clearInterval(entry.pollTimer);
     queueRegistry.delete(socket.id);
 
-    const queueKey = mmQueue(entry.region);
-    await redis.zrem(queueKey, entry.userId).catch(() => {});
+    // Remove from Redis if available
+    if (redis) {
+      const queueKey = mmQueue(entry.region);
+      await redis.zrem(queueKey, entry.userId).catch(() => {});
+    }
   });
 }

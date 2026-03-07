@@ -15,11 +15,13 @@ const cormorant = Cormorant_Garamond({
   style: ['italic', 'normal'],
   variable: '--font-cormorant',
   display: 'swap',
+  preload: false, // display font used sparingly — skip preload to avoid unused-preload warnings
 });
 
 export const metadata: Metadata = {
   title: 'ZShooter',
   description: 'A top-down shooter game. A game by Christopher Joshy.',
+  icons: { icon: '/zshooter-logo.png' },
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

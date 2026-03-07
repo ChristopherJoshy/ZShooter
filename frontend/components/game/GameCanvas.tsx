@@ -5,17 +5,15 @@ import { makePlayer, newBgPetal } from '@/lib/game/entities';
 import { startAudio, sfx } from '@/lib/game/audio';
 import { renderGame, renderBg } from '@/lib/game/renderer';
 import { updateGame, beginWave, updParticles } from '@/lib/game/updater';
-import { getStoryWaveCfg, getStoryChapterLength, STORY_DIFFICULTY_MULT } from '@/lib/game/waves';
 import { useGameLoop } from '@/hooks/useGameLoop';
 import { useGame, getStats } from '@/context/GameContext';
 import type { GameRunState } from '@/lib/game/types';
-import type { StoryDifficulty } from '@/lib/game/types';
 import HUD from './HUD';
 import PauseOverlay from './PauseOverlay';
 import TouchControls from './TouchControls';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-function makeRunState(save: any, storyChapterId?: number, storyDifficulty?: StoryDifficulty, opponentNames?: string[]): GameRunState {
+function makeRunState(save: any, opponentNames?: string[]): GameRunState {
   const stats = getStats(save);
   const player = makePlayer(stats);
   const state: GameRunState = {
@@ -40,6 +38,7 @@ function makeRunState(save: any, storyChapterId?: number, storyDifficulty?: Stor
     waveTotal: 0,
     waveTransTimer: 0,
     waveTrans: false,
+    waveAnnTimer: 0,
     spawnTimer: 0,
     spawnInterval: 60,
 
@@ -57,8 +56,6 @@ function makeRunState(save: any, storyChapterId?: number, storyDifficulty?: Stor
     stats,
     paused: false,
 
-    storyChapterId,
-    storyDiffMult: storyDifficulty ? STORY_DIFFICULTY_MULT[storyDifficulty] : undefined,
     opponentNames,
   };
   beginWave(state, 1);
@@ -66,7 +63,7 @@ function makeRunState(save: any, storyChapterId?: number, storyDifficulty?: Stor
 }
 
 export default function GameCanvas({ isTouch, onReturn, opponentNames = [] }: { isTouch: boolean; onReturn?: () => void; opponentNames?: string[] }) {
-  const { save, setSave, gameState, setGameState, setRunState, runState, persistSave, setLastResult, gameMode, storyChapter, storyDifficulty, setLastRankedResult, settings } = useGame();
+  const { save, setSave, gameState, setGameState, setRunState, runState, persistSave, setLastResult, gameMode, setLastRankedResult, settings } = useGame();
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const stateRef = useRef<GameRunState | null>(null);
   const playingRef = useRef(false);
@@ -74,25 +71,23 @@ export default function GameCanvas({ isTouch, onReturn, opponentNames = [] }: { 
 
   // Initialise run state when game starts; keep ambient state for background when idle
   useEffect(() => {
-    if (gameState === 'playing' || gameState === 'story') {
-      const rs = gameState === 'story' && storyChapter !== null && storyDifficulty !== null
-        ? makeRunState(save, storyChapter, storyDifficulty, opponentNames)
-        : makeRunState(save, undefined, undefined, opponentNames);
+    if (gameState === 'playing') {
+      const rs = makeRunState(save, opponentNames);
       stateRef.current = rs;
       setRunState(rs);
       sfx('start');
       runStartRef.current = Date.now();
     } else if (!stateRef.current) {
       // Ambient background state — only petals/particles rendered
-      stateRef.current = makeRunState(save, undefined, undefined, opponentNames);
+      stateRef.current = makeRunState(save, opponentNames);
     }
-    playingRef.current = gameState === 'playing' || gameState === 'story';
+    playingRef.current = gameState === 'playing';
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [gameState, opponentNames]);
 
   // Return to Garden from pause — resets to ambient state
   const handleReturnToGarden = useCallback(() => {
-    stateRef.current = makeRunState(save, undefined, undefined, opponentNames);
+    stateRef.current = makeRunState(save, opponentNames);
     playingRef.current = false;
     setRunState(null);
     setGameState('garden');
@@ -103,6 +98,7 @@ export default function GameCanvas({ isTouch, onReturn, opponentNames = [] }: { 
   const handleEndGame = useCallback((state: GameRunState) => {
     const newSeeds = save.seeds + state.runSeeds;
     const newHigh = Math.max(save.highScore, state.score);
+    const newHighWave = Math.max(save.highestWave ?? 0, state.wave);
     const durationMs = Date.now() - runStartRef.current;
 
     // Build run record for history
@@ -131,11 +127,12 @@ export default function GameCanvas({ isTouch, onReturn, opponentNames = [] }: { 
       ...save,
       seeds: newSeeds,
       highScore: newHigh,
+      highestWave: newHighWave,
       totalRuns: save.totalRuns + 1,
       runHistory,
       stats: newStats,
     };
-    setLastResult({ wave: state.wave, score: state.score, kills: state.kills, seedsEarned: state.runSeeds, weapon: save.activeWeapon, ability: save.activeAbility });
+    setLastResult({ wave: state.wave, score: state.score, kills: state.kills, seedsEarned: state.runSeeds, weapon: save.activeWeapon, ability: save.activeAbility, died: true });
     if (state.score > save.highScore) sfx('newHighScore');
 
     // ── Ranked: submit match result ──────────────────────────────────────────
@@ -176,32 +173,13 @@ export default function GameCanvas({ isTouch, onReturn, opponentNames = [] }: { 
       });
     }
 
-    // ── Story: record chapter completion ──────────────────────────────────────
-    if (gameMode === 'story' && storyChapter !== null && storyDifficulty !== null) {
-      // Only mark complete if the player cleared all waves (not died early)
-      if (state.wave >= getStoryChapterLength(storyChapter)) {
-        const newStoryProgress = [
-          ...(save.storyProgress ?? []),
-          { chapterId: storyChapter, difficulty: storyDifficulty, completedAt: Date.now() },
-        ];
-        newSave.storyProgress = newStoryProgress;
-        newSave.story = {
-          completedChapters: newStoryProgress,
-          fullClearDate: new Set(newStoryProgress.map((item) => item.chapterId)).size >= 3 ? Date.now() : save.story.fullClearDate,
-        };
-        import('@/lib/api').then(({ apiCompleteChapter }) => {
-          apiCompleteChapter({ chapterId: storyChapter!, difficulty: storyDifficulty! }).catch(() => null);
-        });
-      }
-    }
-
     persistSave(newSave);
     // Reset state to an ambient background state (not null) so petals keep animating
-    stateRef.current = makeRunState(newSave, undefined, undefined, opponentNames);
+    stateRef.current = makeRunState(newSave, opponentNames);
     playingRef.current = false;
     setRunState(null);
     setGameState('results');
-  }, [save, setSave, persistSave, setLastResult, setRunState, setGameState, gameMode, storyChapter, storyDifficulty, setLastRankedResult, opponentNames]);
+  }, [save, setSave, persistSave, setLastResult, setRunState, setGameState, gameMode, setLastRankedResult, opponentNames]);
 
   // Seed collect callback — no immediate save needed; saved on game over
   const handleSeedCollect = useCallback(() => { /* runSeeds tracked in state */ }, []);
@@ -216,11 +194,6 @@ export default function GameCanvas({ isTouch, onReturn, opponentNames = [] }: { 
     const state = stateRef.current;
     if (playingRef.current && state) {
       updateGame(state, dt, handleEndGame, handleSeedCollect);
-      if (!settings.screenShake) {
-        state.shake.x = 0;
-        state.shake.y = 0;
-        state.shake.m = 0;
-      }
       renderGame(ctx, state, settings.showOpponentNames);
       // Shallow-copy state into React context each frame so HUD stays live.
       setRunState({ ...state });
@@ -270,8 +243,12 @@ export default function GameCanvas({ isTouch, onReturn, opponentNames = [] }: { 
       const state = stateRef.current;
       if (!state) return;
       const rect = canvas.getBoundingClientRect();
-      state.mouseX = e.clientX - rect.left;
-      state.mouseY = e.clientY - rect.top;
+      // rect is in CSS-scaled pixels; divide by the CSS→canvas scale ratio
+      // so that mouseX/mouseY are in the same coordinate space as player.x/y.
+      const scaleX = rect.width / W;
+      const scaleY = rect.height / H;
+      state.mouseX = (e.clientX - rect.left) / scaleX;
+      state.mouseY = (e.clientY - rect.top) / scaleY;
     };
     const onMouseDown = (e: MouseEvent) => {
       if (e.button !== 0) return;
@@ -295,7 +272,7 @@ export default function GameCanvas({ isTouch, onReturn, opponentNames = [] }: { 
     };
   }, []);
 
-  const isPlaying = gameState === 'playing' || gameState === 'story';
+  const isPlaying = gameState === 'playing';
 
   return (
     <div style={{ position: 'relative', width: W, height: H }}>
@@ -304,7 +281,7 @@ export default function GameCanvas({ isTouch, onReturn, opponentNames = [] }: { 
         id="gc"
         width={W}
         height={H}
-        style={{ display: 'block', borderRadius: 18, cursor: isPlaying ? 'none' : 'default' }}
+        style={{ display: 'block', cursor: isPlaying ? 'none' : 'default' }}
       />
       {isPlaying && runState && (
         <>

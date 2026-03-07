@@ -1,12 +1,12 @@
 'use client';
 import { createContext, useContext, useState, useCallback, useEffect, ReactNode } from 'react';
-import type { GameSave, GameState, GameRunState, PlayerSettings, StoryDifficulty } from '@/lib/game/types';
+import type { GameSave, GameState, GameRunState, PlayerSettings } from '@/lib/game/types';
 import { apiSaveSave } from '@/lib/api';
 import { STAT_DEFS, WEAPON_DEFS, ABILITY_DEFS } from '@/lib/game/constants';
 import { clamp } from '@/lib/game/physics';
 import { setAudioMix } from '@/lib/game/audio';
 
-export type GameMode = 'arcade' | 'ranked' | 'story';
+export type GameMode = 'arcade' | 'ranked';
 
 const SETTINGS_KEY = 'zshooter_settings_v1';
 
@@ -50,7 +50,6 @@ function defaultSave(): GameSave {
       highestCombo: 0,
       totalPlayTime: 0,
     },
-    storyProgress: [],
     ranked: {
       tier: 'seedling',
       division: 'III',
@@ -64,17 +63,14 @@ function defaultSave(): GameSave {
       podiumFinishes: 0,
       firstPlaceCount: 0,
     },
-    story: {
-      completedChapters: [],
-      fullClearDate: null,
-    },
+    highestWave: 0,
   };
 }
 
 export function getStats(save: GameSave) {
   const up = save.up;
-  // Reload time reduced by swiftLoad (up to -50fr at max 5)
-  const reloadTime = Math.max(40, 88 - up.swiftLoad * 10);
+  // Reload time reduced by swiftLoad (up to -70fr at max 5, floor 60fr)
+  const reloadTime = Math.max(60, 130 - up.swiftLoad * 14);
   return {
     maxHp: 80 + up.vitalRoots * 15,
     speed: 3.64 + up.windStep * 0.25,
@@ -105,15 +101,11 @@ interface GameContextValue {
   username: string;
   setUsername: (u: string) => void;
   // Results data for display
-  lastResult: { wave: number; score: number; kills: number; seedsEarned: number; weapon: string; ability: string } | null;
-  setLastResult: (r: { wave: number; score: number; kills: number; seedsEarned: number; weapon: string; ability: string } | null) => void;
+  lastResult: { wave: number; score: number; kills: number; seedsEarned: number; weapon: string; ability: string; died?: boolean } | null;
+  setLastResult: (r: { wave: number; score: number; kills: number; seedsEarned: number; weapon: string; ability: string; died?: boolean } | null) => void;
   // Phase 11 — mode selector
   gameMode: GameMode;
   setGameMode: (m: GameMode) => void;
-  storyChapter: number | null;
-  setStoryChapter: (c: number | null) => void;
-  storyDifficulty: StoryDifficulty | null;
-  setStoryDifficulty: (d: StoryDifficulty | null) => void;
   // Ranked results
   lastRankedResult: { rpDelta: number; newTier: string; newDivision: string | null; newRp: number } | null;
   setLastRankedResult: (r: { rpDelta: number; newTier: string; newDivision: string | null; newRp: number } | null) => void;
@@ -130,8 +122,6 @@ export function GameProvider({ children, initialSave, initialUsername }: { child
   const [username, setUsername] = useState(initialUsername ?? '');
   const [lastResult, setLastResult] = useState<GameContextValue['lastResult']>(null);
   const [gameMode, setGameMode] = useState<GameMode>('arcade');
-  const [storyChapter, setStoryChapter] = useState<number | null>(null);
-  const [storyDifficulty, setStoryDifficulty] = useState<StoryDifficulty | null>(null);
   const [lastRankedResult, setLastRankedResult] = useState<GameContextValue['lastRankedResult']>(null);
   const [settings, setSettingsState] = useState<PlayerSettings>(defaultSettings());
 
@@ -175,8 +165,6 @@ export function GameProvider({ children, initialSave, initialUsername }: { child
       username, setUsername,
       lastResult, setLastResult,
       gameMode, setGameMode,
-      storyChapter, setStoryChapter,
-      storyDifficulty, setStoryDifficulty,
       lastRankedResult, setLastRankedResult,
       settings, setSettings,
     }}>

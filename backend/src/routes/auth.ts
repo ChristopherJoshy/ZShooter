@@ -7,7 +7,10 @@ import { COOKIE_NAME } from '../plugins/auth.js';
 const COOKIE_OPTS = {
   httpOnly: true,
   secure: process.env.NODE_ENV === 'production',
-  sameSite: process.env.NODE_ENV === 'production' ? ('none' as const) : ('lax' as const),
+  // Always 'lax' — requests go through the Next.js proxy rewrite so they are
+  // same-origin from the browser's perspective. 'none' is only needed for
+  // direct cross-origin requests, which this project no longer uses.
+  sameSite: 'lax' as const,
   path: '/',
   maxAge: 60 * 60 * 24 * 7, // 7 days in seconds
 };

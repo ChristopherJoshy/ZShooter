@@ -15,7 +15,7 @@ import type {
 } from './events.js';
 import { registerPresenceHandlers } from './presence.js';
 import { registerMatchmakingHandlers } from './matchmaking.js';
-import type { Redis } from 'ioredis';
+import { redisAvailable } from '../plugins/redis.js';
 
 // Re-export the typed IO type for use in other modules
 export type IO = Server<ClientToServerEvents, ServerToClientEvents, InterServerEvents, SocketData>;
@@ -81,13 +81,13 @@ export function initSocket(httpServer: HttpServer, fastify: FastifyInstance): IO
 
   // ── Connection handler ───────────────────────────────
   io.on('connection', (socket) => {
-    const redis = fastify.redis as Redis;
+    const redis = fastify.redis;
 
     fastify.log.info(`[socket] connected: ${socket.data.username} (${socket.id})`);
 
-    // Register feature handlers
+    // Register feature handlers - pass redis (may be null) and availability flag
     registerPresenceHandlers(io, socket, redis);
-    registerMatchmakingHandlers(io, socket, redis);
+    registerMatchmakingHandlers(io, socket, redis, redisAvailable);
 
     // Log disconnects
     socket.on('disconnect', (reason) => {

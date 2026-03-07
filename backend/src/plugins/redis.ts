@@ -4,9 +4,12 @@ import type { FastifyInstance } from 'fastify';
 
 declare module 'fastify' {
   interface FastifyInstance {
-    redis: Redis;
+    redis: Redis | null;
   }
 }
+
+// Export redis availability flag for other modules
+export let redisAvailable = false;
 
 const CONNECT_TIMEOUT_MS = 5000; // Give up after 5s — keeps Fastify startup under avvio limit.
 
@@ -32,6 +35,7 @@ async function redisPlugin(fastify: FastifyInstance) {
 
   if (connectResult === 'ok') {
     fastify.log.info('Redis connected');
+    redisAvailable = true;
   } else {
     fastify.log.warn(
       { connectResult },
@@ -39,9 +43,10 @@ async function redisPlugin(fastify: FastifyInstance) {
     );
     // Ensure ioredis is in a closed state so it doesn't keep retrying in background.
     redis.disconnect();
+    redisAvailable = false;
   }
 
-  fastify.decorate('redis', redis);
+  fastify.decorate('redis', redisAvailable ? redis : null);
 
   fastify.addHook('onClose', async () => {
     try { await redis.quit(); } catch { /* already disconnected */ }

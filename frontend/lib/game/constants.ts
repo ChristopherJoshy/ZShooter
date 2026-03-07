@@ -107,24 +107,27 @@ export const PAL = {
     twinPetal:    '#d490b4',
     mistArc:      '#70b4aa',
     rootCannon:   '#8a7060',
+    multiShoot:   '#c4a030',
   },
 } as const;
 
 export const SAVE_KEY = 'zenflow_v4';
 export const COMBO_DUR = 140;
-export const RELOAD_TIME = 88;
+export const RELOAD_TIME = 130; // was 88 — longer reload adds more tension
 
 export const ABIL_CD: Record<string, number> = {
-  petalDash: 180,
-  bloomShield: 480,
-  blossomPulse: 300,
+  petalDash:    150,  // was 180 — slightly snappier
+  bloomShield:  420,  // was 480 — more usable
+  blossomPulse: 240,  // was 300 — pulse is more fun when available more often
+  thornVolley:  200,  // new ability
   none: 0,
 };
 
 export const ABIL_DUR: Record<string, number> = {
-  petalDash: 14,
-  bloomShield: 120,
-  blossomPulse: 18,
+  petalDash:    18,   // was 14 — dash covers more distance
+  bloomShield:  150,  // was 120 — shield lasts long enough to feel safe
+  blossomPulse: 22,   // was 18
+  thornVolley:  0,    // instant
 };
 
 // ── Stat definitions — Body / Flow / Spirit ───────────────────────────────────
@@ -132,36 +135,38 @@ export const ABIL_DUR: Record<string, number> = {
 
 export const STAT_DEFS = [
   // Body
-  { id: 'vitalRoots', group: 'Body',   icon: '❤',  name: 'Vital Roots',  unit: '+15 HP',     max: 8, costs: [12, 24, 42, 68, 105, 155, 220, 300], val: (lvl: number) => 80 + lvl * 15 },
-  { id: 'forestMend', group: 'Body',   icon: '🌿', name: 'Forest Mend',  unit: '+regen',     max: 6, costs: [30, 65, 110, 170, 250, 360],          val: (lvl: number) => lvl === 0 ? 'Off' : '+' + (lvl * 0.006).toFixed(3) + '/f' },
-  { id: 'ironBark',   group: 'Body',   icon: '🛡', name: 'Iron Bark',    unit: '-dmg taken', max: 5, costs: [40, 90, 160, 250, 375],               val: (lvl: number) => lvl === 0 ? 'Off' : '-' + (lvl * 8) + '%' },
+  { id: 'vitalRoots', group: 'Body',   icon: 'statVitalRoots',  name: 'Vital Roots',  unit: '+15 HP',     max: 8, costs: [12, 24, 42, 68, 105, 155, 220, 300], val: (lvl: number) => 80 + lvl * 15 },
+  { id: 'forestMend', group: 'Body',   icon: 'statForestMend',  name: 'Forest Mend',  unit: '+regen',     max: 6, costs: [30, 65, 110, 170, 250, 360],          val: (lvl: number) => lvl === 0 ? 'Off' : '+' + (lvl * 0.006).toFixed(3) + '/f' },
+  { id: 'ironBark',   group: 'Body',   icon: 'statIronBark',    name: 'Iron Bark',    unit: '-dmg taken', max: 5, costs: [40, 90, 160, 250, 375],               val: (lvl: number) => lvl === 0 ? 'Off' : '-' + (lvl * 8) + '%' },
   // Flow
-  { id: 'petalEdge',  group: 'Flow',   icon: '🌸', name: 'Petal Edge',   unit: '+6 dmg',     max: 8, costs: [15, 30, 55, 90, 135, 195, 270, 370],  val: (lvl: number) => 18 + lvl * 6 },
-  { id: 'rapidBloom', group: 'Flow',   icon: '⚡', name: 'Rapid Bloom',  unit: 'faster',     max: 6, costs: [20, 45, 85, 140, 210, 310],            val: (lvl: number) => Math.max(6, 14 - lvl * 1.3).toFixed(1) + 'fr' },
-  { id: 'deepQuiver', group: 'Flow',   icon: '○',  name: 'Deep Quiver',  unit: '+3 ammo',    max: 5, costs: [25, 60, 110, 175, 265],               val: (lvl: number) => 10 + lvl * 3 },
-  { id: 'swiftLoad',  group: 'Flow',   icon: '↺',  name: 'Swift Load',   unit: '-reload',    max: 5, costs: [25, 60, 110, 175, 265],               val: (lvl: number) => Math.max(40, 88 - lvl * 10) + 'fr' },
+  { id: 'petalEdge',  group: 'Flow',   icon: 'statPetalEdge',   name: 'Petal Edge',   unit: '+6 dmg',     max: 8, costs: [15, 30, 55, 90, 135, 195, 270, 370],  val: (lvl: number) => 18 + lvl * 6 },
+  { id: 'rapidBloom', group: 'Flow',   icon: 'statRapidBloom',  name: 'Rapid Bloom',  unit: 'faster',     max: 6, costs: [20, 45, 85, 140, 210, 310],            val: (lvl: number) => Math.max(6, 14 - lvl * 1.3).toFixed(1) + 'fr' },
+  { id: 'deepQuiver', group: 'Flow',   icon: 'statDeepQuiver',  name: 'Deep Quiver',  unit: '+3 ammo',    max: 5, costs: [25, 60, 110, 175, 265],               val: (lvl: number) => 10 + lvl * 3 },
+  { id: 'swiftLoad',  group: 'Flow',   icon: 'statSwiftLoad',   name: 'Swift Load',   unit: '-reload',    max: 5, costs: [25, 60, 110, 175, 265],               val: (lvl: number) => Math.max(60, 130 - lvl * 14) + 'fr' },
   // Spirit
-  { id: 'windStep',   group: 'Spirit', icon: '💨', name: 'Wind Step',    unit: '+0.25 spd',  max: 6, costs: [20, 45, 85, 140, 210, 310],            val: (lvl: number) => (3.64 + lvl * 0.25).toFixed(2) },
-  { id: 'gustMaster', group: 'Spirit', icon: '🌀', name: 'Gust Master',  unit: '-CD',        max: 5, costs: [45, 100, 175, 275, 410],              val: (lvl: number) => lvl === 0 ? 'Off' : '-' + (lvl * 8) + '% CD' },
-  { id: 'petalGuard', group: 'Spirit', icon: '🌺', name: 'Petal Guard',  unit: '+abil dur',  max: 4, costs: [60, 140, 250, 400],                   val: (lvl: number) => lvl === 0 ? 'Off' : '+' + (lvl * 12) + '% dur' },
+  { id: 'windStep',   group: 'Spirit', icon: 'statWindStep',    name: 'Wind Step',    unit: '+0.25 spd',  max: 6, costs: [20, 45, 85, 140, 210, 310],            val: (lvl: number) => (3.64 + lvl * 0.25).toFixed(2) },
+  { id: 'gustMaster', group: 'Spirit', icon: 'statGustMaster',  name: 'Gust Master',  unit: '-CD',        max: 5, costs: [45, 100, 175, 275, 410],              val: (lvl: number) => lvl === 0 ? 'Off' : '-' + (lvl * 8) + '% CD' },
+  { id: 'petalGuard', group: 'Spirit', icon: 'statPetalGuard',  name: 'Petal Guard',  unit: '+abil dur',  max: 4, costs: [60, 140, 250, 400],                   val: (lvl: number) => lvl === 0 ? 'Off' : '+' + (lvl * 12) + '% dur' },
 ] as const;
 
 export const WEAPON_DEFS = [
-  { id: 'seedShot',     icon: '◉',  name: 'Seed Shot',      desc: 'Accurate single shots. Consistent in all situations.',       stats: '20 dmg · 14fr · single',      cost: 0 },
-  { id: 'petalSpray',   icon: '🌸', name: 'Petal Spray',    desc: 'Three petals fan in a spread. Great wide coverage.',         stats: '12 dmg×3 · 10fr · spread',    cost: 80 },
-  { id: 'thornBurst',   icon: '🌾', name: 'Thorn Burst',    desc: 'Shotgun burst of thorns. Lethal up close.',                  stats: '7 dmg×5 · 22fr · scatter',    cost: 220 },
-  { id: 'lotusBeam',    icon: '◆',  name: 'Lotus Beam',     desc: 'Slow piercing beam that passes through all enemies.',        stats: '32 dmg · 20fr · pierce',      cost: 480 },
-  { id: 'pulseBlossom', icon: '✿',  name: 'Pulse Blossom',  desc: 'Rapid autofire blossom rounds. High DPS, low per-shot.',     stats: '9 dmg · 4fr · auto',          cost: 360 },
-  { id: 'twinPetal',    icon: '❋',  name: 'Twin Petal',     desc: 'Fires two parallel petals side by side.',                    stats: '14 dmg×2 · 11fr · dual',      cost: 560 },
-  { id: 'mistArc',      icon: '〜', name: 'Mist Arc',       desc: 'Homing mist orbs that curve toward the nearest enemy.',      stats: '18 dmg · 14fr · homing',      cost: 680 },
-  { id: 'rootCannon',   icon: '◈',  name: 'Root Cannon',    desc: 'Slow heavy root shells. Massive damage, slow fire rate.',    stats: '85 dmg · 34fr · heavy',       cost: 900 },
+  { id: 'seedShot',     icon: 'weaponSeedShot',     name: 'Seed Shot',      desc: 'Accurate single shots. Consistent in all situations.',                      stats: '22 dmg · 14fr · single',      cost: 0 },
+  { id: 'petalSpray',   icon: 'weaponPetalSpray',   name: 'Petal Spray',    desc: 'Three petals fan in a spread. Great wide coverage.',                        stats: '13 dmg×3 · 10fr · spread',    cost: 80 },
+  { id: 'thornBurst',   icon: 'weaponThornBurst',   name: 'Thorn Burst',    desc: 'Shotgun burst of thorns. Lethal up close.',                                 stats: '8 dmg×5 · 22fr · scatter',    cost: 220 },
+  { id: 'lotusBeam',    icon: 'weaponLotusBeam',    name: 'Lotus Beam',     desc: 'Slow piercing beam that passes through all enemies.',                        stats: '38 dmg · 20fr · pierce',      cost: 480 },
+  { id: 'pulseBlossom', icon: 'weaponPulseBlossom', name: 'Pulse Blossom',  desc: 'Rapid autofire blossom rounds. High DPS, low per-shot.',                    stats: '10 dmg · 4fr · auto',         cost: 360 },
+  { id: 'twinPetal',    icon: 'weaponTwinPetal',    name: 'Twin Petal',     desc: 'Fires two parallel petals side by side.',                                   stats: '16 dmg×2 · 11fr · dual',      cost: 560 },
+  { id: 'mistArc',      icon: 'weaponMistArc',      name: 'Mist Arc',       desc: 'Homing mist orbs that curve toward the nearest enemy.',                     stats: '20 dmg · 14fr · homing',      cost: 680 },
+  { id: 'rootCannon',   icon: 'weaponRootCannon',   name: 'Root Cannon',    desc: 'Slow heavy root shells. Massive damage, slow fire rate.',                   stats: '95 dmg · 34fr · heavy',       cost: 900 },
+  { id: 'multiShoot',   icon: 'weaponMultiShoot',   name: 'Multi Shoot',    desc: 'Fires 5 bullets in a tight fan simultaneously. Overwhelming suppression.',  stats: '11 dmg×5 · 18fr · fan',       cost: 760 },
 ] as const;
 
 export const ABILITY_DEFS = [
-  { id: 'none',         icon: '—',  name: 'None',          desc: 'Pure fundamentals. No active skill.',                          stats: '',                          cost: 0 },
-  { id: 'petalDash',    icon: '💨', name: 'Petal Dash',    desc: 'Dash in move direction, briefly invincible. 3s cooldown.',    stats: 'Invincible · 3s CD',         cost: 110 },
-  { id: 'bloomShield',  icon: '🛡', name: 'Bloom Shield',  desc: 'Aura absorbs all damage for 2 seconds. 8s cooldown.',         stats: '2s shield · 8s CD',          cost: 320 },
-  { id: 'blossomPulse', icon: '💥', name: 'Blossom Pulse', desc: 'Energy burst damages all nearby foes. 5s cooldown.',          stats: 'AoE burst · 5s CD',          cost: 560 },
+  { id: 'none',          icon: 'abilityNone',         name: 'None',           desc: 'Pure fundamentals. No active skill.',                                          stats: '',                           cost: 0 },
+  { id: 'petalDash',     icon: 'abilityPetalDash',    name: 'Petal Dash',     desc: 'Dash in move direction, invincible during dash. 2.5s cooldown.',               stats: 'Invincible · 2.5s CD',        cost: 110 },
+  { id: 'bloomShield',   icon: 'abilityBloomShield',  name: 'Bloom Shield',   desc: 'Aura absorbs all damage for 2.5 seconds and reflects bullets. 7s cooldown.',   stats: '2.5s shield · 7s CD',         cost: 320 },
+  { id: 'blossomPulse',  icon: 'abilityBlossomPulse', name: 'Blossom Pulse',  desc: 'Energy burst damages all nearby foes and knocks them back. 4s cooldown.',      stats: 'AoE+knockback · 4s CD',       cost: 420 },
+  { id: 'thornVolley',   icon: 'abilityThornVolley',  name: 'Thorn Volley',   desc: 'Unleash 12 thorns in all directions instantly. 3.3s cooldown.',               stats: '12-way burst · 3.3s CD',      cost: 560 },
 ] as const;
 
 // ── Profile cosmetics ──────────────────────────────────────────────────────────

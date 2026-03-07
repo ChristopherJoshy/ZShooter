@@ -2,7 +2,6 @@
 import { useEffect, useMemo, useState, useRef, useCallback } from 'react';
 import GameIcon from '@/components/ui/GameIcon';
 import { useGame } from '@/context/GameContext';
-import { STORY_CHAPTERS } from '@/lib/game/waves';
 import {
   apiFriendAccept,
   apiFriendDecline,
@@ -17,10 +16,10 @@ import {
 } from '@/lib/api';
 import { ABILITY_DEFS, STAT_DEFS, WEAPON_DEFS } from '@/lib/game/constants';
 import { sfx } from '@/lib/game/audio';
-import type { GameSave, PlayerSettings, StoryDifficulty } from '@/lib/game/types';
+import type { GameSave, PlayerSettings } from '@/lib/game/types';
 import type { MatchmakingState, SocketState } from '@/hooks/useSocket';
 
-type ViewId = 'dashboard' | 'story' | 'loadout' | 'ranked' | 'leaderboard' | 'friends' | 'settings';
+type ViewId = 'dashboard' | 'loadout' | 'ranked' | 'leaderboard' | 'friends' | 'settings';
 
 interface GameHubProps {
   visible: boolean;
@@ -38,13 +37,11 @@ interface GameHubProps {
   onBuyAbility: (id: string) => void;
   onSaveProfile: (profile: GameSave['profile']) => void;
   onPlayArcade: () => void;
-  onPlayStory: (chapterId: number, difficulty: StoryDifficulty) => void;
   onLogout: () => void;
 }
 
 const VIEWS: Array<{ id: ViewId; label: string; icon: React.ComponentProps<typeof GameIcon>['name'] }> = [
   { id: 'dashboard', label: 'Play',        icon: 'play'        },
-  { id: 'story',     label: 'Story',       icon: 'story'       },
   { id: 'loadout',   label: 'Loadout',     icon: 'arsenal'     },
   { id: 'ranked',    label: 'Ranked',      icon: 'ranked'      },
   { id: 'leaderboard', label: 'Scores',   icon: 'leaderboard' },
@@ -52,11 +49,7 @@ const VIEWS: Array<{ id: ViewId; label: string; icon: React.ComponentProps<typeo
   { id: 'settings',  label: 'Settings',    icon: 'settings'    },
 ];
 
-const STORY_DIFFS: StoryDifficulty[] = ['calm', 'balanced', 'tempest'];
-const RANK_BADGE_X: Record<string, number> = {
-  seedling: 0, sprout: 1, blossom: 2, willow: 3, lotus: 4, 'storm-petal': 5, 'garden-master': 6,
-};
-const RANK_ORDER = Object.keys(RANK_BADGE_X);
+const RANK_ORDER = ['seedling', 'sprout', 'blossom', 'willow', 'lotus', 'storm-petal', 'garden-master'];
 const RANK_REWARDS: Record<string, string[]> = {
   seedling:       ['Scout banner', 'Starter title'],
   sprout:         ['Verdant frame', '500 seeds'],
@@ -95,14 +88,12 @@ export default function GameHub({
   onBuyAbility,
   onSaveProfile,
   onPlayArcade,
-  onPlayStory,
   onLogout,
 }: GameHubProps) {
   const { settings, setSettings } = useGame();
   const [view, setView] = useState<ViewId>('dashboard');
-  const [railCollapsed, setRailCollapsed] = useState(false);
   const [showModePicker, setShowModePicker] = useState(false);
-  const [leaderboardScope, setLeaderboardScope] = useState<'ranked' | 'score'>('ranked');
+  const [leaderboardScope, setLeaderboardScope] = useState<'ranked' | 'score' | 'wave'>('ranked');
   const [leaderboardEntries, setLeaderboardEntries] = useState<LeaderboardEntry[]>([]);
   const [myRank, setMyRank] = useState<LeaderboardEntry | null>(null);
   const [friends, setFriends] = useState<FriendEntry[]>([]);
@@ -110,12 +101,10 @@ export default function GameHub({
   const [requestsOut, setRequestsOut] = useState<FriendRequestEntry[]>([]);
   const [friendName, setFriendName] = useState('');
   const [feedback, setFeedback] = useState<string | null>(null);
-  const [storyDifficulty, setStoryDifficulty] = useState<StoryDifficulty>('balanced');
 
   const rankName = prettifyRank(save.ranked.tier, save.ranked.division);
   const progress = save.ranked.tier === 'garden-master' ? 100 : Math.round((save.ranked.rp % 300) / 3);
   const nextTier = RANK_ORDER[Math.min(RANK_ORDER.indexOf(save.ranked.tier) + 1, RANK_ORDER.length - 1)];
-  const storyCompletion = Math.round((new Set(save.story.completedChapters.map((item) => item.chapterId)).size / STORY_CHAPTERS.length) * 100) || 0;
   const lastRun = save.runHistory[0] ?? null;
   const activeWeapon = useMemo(() => WEAPON_DEFS.find((item) => item.id === save.activeWeapon) ?? WEAPON_DEFS[0], [save.activeWeapon]);
   const activeAbility = useMemo(() => ABILITY_DEFS.find((item) => item.id === save.activeAbility) ?? ABILITY_DEFS[0], [save.activeAbility]);
@@ -162,29 +151,10 @@ export default function GameHub({
   }
 
   return (
-    <div className={'hub-shell' + (visible ? '' : ' hidden') + (railCollapsed ? ' rail-collapsed' : '')}>
-
-      {/* ── Mobile hamburger ─────────────────────────────────────────── */}
-      <button
-        className="hub-hamburger"
-        aria-label="Open menu"
-        onClick={() => setRailCollapsed(false)}
-      >
-        <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-          <line x1="3" y1="5" x2="17" y2="5" />
-          <line x1="3" y1="10" x2="17" y2="10" />
-          <line x1="3" y1="15" x2="17" y2="15" />
-        </svg>
-      </button>
-
-      {/* ── Mobile scrim ──────────────────────────────────────────────── */}
-      <div
-        className={'hub-rail-scrim' + (!railCollapsed ? ' visible' : '')}
-        onClick={() => setRailCollapsed(true)}
-      />
+    <div className={'hub-shell' + (visible ? '' : ' hidden') + ' rail-collapsed'}>
 
       {/* ── Sidebar rail ─────────────────────────────────────────────── */}
-      <aside className={'hub-rail' + (railCollapsed ? ' collapsed' : ' open')}>
+      <aside className="hub-rail collapsed">
         <div className="hub-brand">
           <img src="/zshooter-logo.png" alt="ZShooter" className="hub-brand-mark-img" />
           <span className="hub-brand-title">ZShooter</span>
@@ -199,7 +169,6 @@ export default function GameHub({
               onClick={() => {
                 sfx('menuClick');
                 setView(item.id);
-                if (window.innerWidth <= 920) setRailCollapsed(true);
               }}
               onMouseEnter={() => sfx('menuHover')}
             >
@@ -239,25 +208,11 @@ export default function GameHub({
           </div>
         </div>
 
-        <button className="hub-logout" onClick={() => { if (window.innerWidth <= 920) setRailCollapsed(true); onLogout(); }}>
+        <button className="hub-logout" onClick={() => { onLogout(); }}>
           <GameIcon name="logout" className="hub-nav-icon" />
           <span className="hub-nav-label">Log out</span>
         </button>
 
-        {/* ── Desktop collapse toggle ───────────────────────────────── */}
-        <button
-          className="hub-rail-toggle"
-          aria-label={railCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-          onClick={() => setRailCollapsed((prev) => !prev)}
-        >
-          <svg
-            width="16" height="16" viewBox="0 0 16 16" fill="none"
-            stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
-            style={{ transform: railCollapsed ? 'rotate(180deg)' : 'none', transition: 'transform 0.22s ease' }}
-          >
-            <polyline points="10 4 6 8 10 12" />
-          </svg>
-        </button>
       </aside>
 
       {/* ── Main content ─────────────────────────────────────────────── */}
@@ -339,7 +294,7 @@ export default function GameHub({
                   <div key={entry.userId} className="hub-spotlight-row">
                     <span className="hub-rank-badge">#{entry.rank}</span>
                     <span>{entry.username}</span>
-                    <strong>{leaderboardScope === 'ranked' ? `${entry.rp ?? 0} RP` : entry.highScore}</strong>
+                    <strong>{leaderboardScope === 'ranked' ? `${entry.rp ?? 0} RP` : leaderboardScope === 'wave' ? `Wave ${entry.highestWave ?? 0}` : entry.highScore}</strong>
                   </div>
                 ))}
                 <button className="hub-text-link" onClick={() => setView('leaderboard')}>View leaderboard</button>
@@ -421,59 +376,6 @@ export default function GameHub({
           </section>
         )}
 
-        {/* ── Story ─────────────────────────────────────────────────── */}
-        {view === 'story' && (
-          <section className="hub-view">
-            <div className="hub-view-header">
-              <div className="hub-view-title">Story</div>
-            </div>
-            <div className="hub-switch-row">
-              {STORY_DIFFS.map((difficulty) => (
-                <button
-                  key={difficulty}
-                  className={'hub-switch-btn' + (storyDifficulty === difficulty ? ' active' : '')}
-                  onClick={() => setStoryDifficulty(difficulty)}
-                >
-                  {difficulty.charAt(0).toUpperCase() + difficulty.slice(1)}
-                </button>
-              ))}
-            </div>
-            <div className="hub-story-grid">
-              {STORY_CHAPTERS.map((chapter) => {
-                const clears = save.story.completedChapters.filter((item) => item.chapterId === chapter.id).length;
-                const unlocked = chapter.id === 1 || save.story.completedChapters.some((item) => item.chapterId === chapter.id - 1);
-                return (
-                  <article key={chapter.id} className={'hub-story-card' + (unlocked ? '' : ' locked')}>
-                    <div className="hub-story-head">
-                      <div>
-                        <div className="hub-card-label">Chapter {chapter.id}</div>
-                        <div className="hub-story-title">{chapter.title}</div>
-                      </div>
-                      {clears > 0 && <GameIcon name="check" className="hub-story-check" />}
-                    </div>
-                    <p className="hub-story-copy">{chapter.description}</p>
-                    <div className="hub-story-waves">
-                      {chapter.waves.map((wave, index) => (
-                        <span key={index} className="hub-wave-chip">{wave.label ?? `Wave ${index + 1}`}</span>
-                      ))}
-                    </div>
-                    <div className="hub-story-foot">
-                      <span>{clears} clear{clears !== 1 ? 's' : ''}</span>
-                      <button
-                        className="hub-story-launch"
-                        disabled={!unlocked}
-                        onClick={() => onPlayStory(chapter.id, storyDifficulty)}
-                      >
-                        {unlocked ? 'Deploy' : 'Locked'}
-                      </button>
-                    </div>
-                  </article>
-                );
-              })}
-            </div>
-          </section>
-        )}
-
         {/* ── Loadout ───────────────────────────────────────────────── */}
         {view === 'loadout' && (
           <section className="hub-view">
@@ -492,9 +394,12 @@ export default function GameHub({
                         className={'hub-item-card' + (save.activeWeapon === weapon.id ? ' active' : '')}
                         onClick={() => owned ? onSelectWeapon(weapon.id) : onBuyWeapon(weapon.id)}
                       >
-                        <strong>{weapon.name}</strong>
-                        <span>{weapon.stats}</span>
-                        <small>{owned ? (save.activeWeapon === weapon.id ? 'Equipped' : 'Owned') : `${weapon.cost} seeds`}</small>
+                        <GameIcon name={weapon.icon as any} className="hub-item-icon" />
+                        <div className="hub-item-info">
+                          <strong>{weapon.name}</strong>
+                          <span>{weapon.stats}</span>
+                          <small>{owned ? (save.activeWeapon === weapon.id ? 'Equipped' : 'Owned') : `${weapon.cost} seeds`}</small>
+                        </div>
                       </button>
                     );
                   })}
@@ -511,9 +416,12 @@ export default function GameHub({
                         className={'hub-item-card' + (save.activeAbility === ability.id ? ' active' : '')}
                         onClick={() => owned ? onSelectAbility(ability.id) : onBuyAbility(ability.id)}
                       >
-                        <strong>{ability.name}</strong>
-                        <span>{ability.desc}</span>
-                        <small>{owned ? (save.activeAbility === ability.id ? 'Equipped' : 'Owned') : `${ability.cost} seeds`}</small>
+                        <GameIcon name={ability.icon as any} className="hub-item-icon" />
+                        <div className="hub-item-info">
+                          <strong>{ability.name}</strong>
+                          <span>{ability.desc}</span>
+                          <small>{owned ? (save.activeAbility === ability.id ? 'Equipped' : 'Owned') : `${ability.cost} seeds`}</small>
+                        </div>
                       </button>
                     );
                   })}
@@ -528,7 +436,8 @@ export default function GameHub({
                   const cost = level >= stat.max ? 0 : stat.costs[level];
                   return (
                     <div key={stat.id} className="hub-stat-row">
-                      <div><strong>{stat.name}</strong><span>{stat.val(level)} {stat.unit}</span></div>
+                      <GameIcon name={stat.icon as any} className="hub-stat-icon" />
+                      <div className="hub-stat-info"><strong>{stat.name}</strong><span>{stat.val(level)} {stat.unit}</span></div>
                       <button
                         className="hub-inline-btn"
                         disabled={level >= stat.max || save.seeds < cost}
@@ -633,13 +542,13 @@ export default function GameHub({
               <div className="hub-view-title">Leaderboard</div>
             </div>
             <div className="hub-switch-row">
-              {(['ranked', 'score'] as const).map((scope) => (
+              {(['ranked', 'score', 'wave'] as const).map((scope) => (
                 <button
                   key={scope}
                   className={'hub-switch-btn' + (leaderboardScope === scope ? ' active' : '')}
                   onClick={() => setLeaderboardScope(scope)}
                 >
-                  {scope === 'ranked' ? 'Ranked' : 'All-time score'}
+                  {scope === 'ranked' ? 'Ranked' : scope === 'score' ? 'All-time score' : 'Highest wave'}
                 </button>
               ))}
             </div>
@@ -647,22 +556,16 @@ export default function GameHub({
               {myRank && (
                 <div className="hub-leaderboard-self">
                   <span>#{myRank.rank}</span>
-                  <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                    <span className="hub-rank-badge-img" style={{ backgroundPositionX: `-${(RANK_BADGE_X[myRank.tier ?? 'seedling'] ?? 0) * 24}px` }} />
-                    {username}
-                  </span>
-                  <span>{leaderboardScope === 'ranked' ? prettifyRank(myRank.tier ?? 'seedling', myRank.division) : myRank.highScore}</span>
-                  <span>{leaderboardScope === 'ranked' ? `${myRank.rp ?? 0} RP` : myRank.totalRuns}</span>
+                  <span>{username}</span>
+                  <span>{leaderboardScope === 'ranked' ? prettifyRank(myRank.tier ?? 'seedling', myRank.division) : leaderboardScope === 'wave' ? `Wave ${myRank.highestWave ?? 0}` : myRank.highScore}</span>
+                  <span>{leaderboardScope === 'ranked' ? `${myRank.rp ?? 0} RP` : leaderboardScope === 'wave' ? myRank.totalRuns : myRank.totalRuns}</span>
                 </div>
               )}
               {leaderboardEntries.map((entry) => (
                 <div key={entry.userId} className={'hub-leaderboard-row' + (entry.userId === userId ? ' self' : '')}>
                   <span>#{entry.rank}</span>
-                  <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                    <span className="hub-rank-badge-img" style={{ backgroundPositionX: `-${(RANK_BADGE_X[entry.tier ?? 'seedling'] ?? 0) * 24}px` }} />
-                    {entry.username}
-                  </span>
-                  <span>{leaderboardScope === 'ranked' ? prettifyRank(entry.tier ?? 'seedling', entry.division) : entry.highScore}</span>
+                  <span>{entry.username}</span>
+                  <span>{leaderboardScope === 'ranked' ? prettifyRank(entry.tier ?? 'seedling', entry.division) : leaderboardScope === 'wave' ? `Wave ${entry.highestWave ?? 0}` : entry.highScore}</span>
                   <span>{leaderboardScope === 'ranked' ? `${entry.rp ?? 0} RP` : entry.totalRuns}</span>
                 </div>
               ))}
@@ -829,14 +732,6 @@ export default function GameHub({
                 <GameIcon name="ranked" className="hub-mode-card-icon" />
                 <div className="hub-mode-card-title">Ranked</div>
                 <div className="hub-mode-card-desc">Queue for a competitive placement match.</div>
-              </button>
-              <button
-                className="hub-mode-card"
-                onClick={() => { setShowModePicker(false); setView('story'); }}
-              >
-                <GameIcon name="story" className="hub-mode-card-icon" />
-                <div className="hub-mode-card-title">Story</div>
-                <div className="hub-mode-card-desc">{storyCompletion}% complete. Pick a chapter.</div>
               </button>
             </div>
             <button className="hub-mode-close" onClick={() => setShowModePicker(false)}>Cancel</button>

@@ -29,17 +29,7 @@ export default function AuthForm({ onSuccess }: AuthFormProps) {
       <div className="auth-card">
         {/* Logo mark */}
         <div className="auth-logo">
-          <svg viewBox="0 0 26 26" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <circle cx="13" cy="13" r="4" fill="white" fillOpacity="0.95"/>
-            <line x1="13" y1="2" x2="13" y2="7" stroke="white" strokeWidth="2.2" strokeLinecap="round"/>
-            <line x1="13" y1="19" x2="13" y2="24" stroke="white" strokeWidth="2.2" strokeLinecap="round"/>
-            <line x1="2" y1="13" x2="7" y2="13" stroke="white" strokeWidth="2.2" strokeLinecap="round"/>
-            <line x1="19" y1="13" x2="24" y2="13" stroke="white" strokeWidth="2.2" strokeLinecap="round"/>
-            <line x1="4.93" y1="4.93" x2="8.46" y2="8.46" stroke="white" strokeWidth="1.8" strokeLinecap="round" strokeOpacity="0.7"/>
-            <line x1="17.54" y1="17.54" x2="21.07" y2="21.07" stroke="white" strokeWidth="1.8" strokeLinecap="round" strokeOpacity="0.7"/>
-            <line x1="21.07" y1="4.93" x2="17.54" y2="8.46" stroke="white" strokeWidth="1.8" strokeLinecap="round" strokeOpacity="0.7"/>
-            <line x1="8.46" y1="17.54" x2="4.93" y2="21.07" stroke="white" strokeWidth="1.8" strokeLinecap="round" strokeOpacity="0.7"/>
-          </svg>
+          <img src="/zshooter-logo.png" alt="ZShooter" />
         </div>
 
         {/* Title */}

@@ -616,6 +616,19 @@ export function drawBullet(ctx: CanvasRenderingContext2D, b: Bullet): void {
     ctx.fillStyle = '#ffffff'; ctx.fill();
     ctx.restore();
 
+  } else if (wid === 'multiShoot') {
+    const ang = Math.atan2(b.vy, b.vx);
+    glow(ctx, b.x, b.y, b.r * 5, b.col, 0.28);
+    ctx.save();
+    ctx.translate(b.x, b.y); ctx.rotate(ang);
+    // Small elongated golden oval
+    ctx.beginPath(); ctx.ellipse(0, 0, b.r * 2.4, b.r * 0.7, 0, 0, Math.PI * 2);
+    ctx.fillStyle = b.col; ctx.globalAlpha = 0.88; ctx.fill();
+    // Bright gold core streak
+    ctx.beginPath(); ctx.ellipse(-b.r * 0.3, 0, b.r * 1.2, b.r * 0.3, 0, 0, Math.PI * 2);
+    ctx.fillStyle = '#fff7a0'; ctx.globalAlpha = 0.95; ctx.fill();
+    ctx.restore(); ctx.globalAlpha = 1;
+
   } else {
     glow(ctx, b.x, b.y, b.r * 5, b.col, 0.25);
     const spd = Math.hypot(b.vx, b.vy);
@@ -737,9 +750,69 @@ export function drawAbilRing(ctx: CanvasRenderingContext2D, state: GameRunState)
   ctx.strokeStyle = h2r('#9070c4', 0.45); ctx.lineWidth = 1.5; ctx.stroke();
 }
 
-export function renderGame(ctx: CanvasRenderingContext2D, state: GameRunState, showOpponentNames = true): void {
+function toRoman(n: number): string {
+  const vals = [50, 40, 10, 9, 5, 4, 1];
+  const syms = ['L', 'XL', 'X', 'IX', 'V', 'IV', 'I'];
+  let r = '';
+  for (let i = 0; i < vals.length; i++) {
+    while (n >= vals[i]) { r += syms[i]; n -= vals[i]; }
+  }
+  return r;
+}
+
+export function drawWaveAnn(ctx: CanvasRenderingContext2D, state: GameRunState): void {
+  const { waveAnnTimer, wave } = state;
+  if (waveAnnTimer <= 0) return;
+  const MAX = 180;
+  const FADE_IN = 35;
+  const FADE_OUT = 50;
+  let a: number;
+  if (waveAnnTimer > MAX - FADE_IN) a = (MAX - waveAnnTimer) / FADE_IN;
+  else if (waveAnnTimer < FADE_OUT) a = waveAnnTimer / FADE_OUT;
+  else a = 1;
+  a = clamp(a, 0, 1);
+
+  const isBoss = wave % 5 === 0;
+  const label = isBoss ? 'BOSS WAVE' : 'WAVE  ' + toRoman(wave);
+  const crimson = isBoss ? '#cc1a1a' : '#a00000';
+  const ruleCol = isBoss ? 'rgba(204,26,26,0.50)' : 'rgba(160,0,0,0.45)';
+  const fontSize = isBoss ? 42 : 38;
+  const cx = W / 2;
+  const cy = H / 2;
+  const bandH = 90;
+
   ctx.save();
-  ctx.translate(state.shake.x, state.shake.y);
+
+  // Full-width black band
+  ctx.globalAlpha = a * 0.82;
+  ctx.fillStyle = '#000000';
+  ctx.fillRect(0, cy - bandH / 2, W, bandH);
+
+  ctx.globalAlpha = a;
+
+  // Thin crimson rules
+  const ruleY1 = cy - 20;
+  const ruleY2 = cy + 22;
+  ctx.strokeStyle = ruleCol;
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(0, ruleY1); ctx.lineTo(W, ruleY1);
+  ctx.moveTo(0, ruleY2); ctx.lineTo(W, ruleY2);
+  ctx.stroke();
+
+  // Main text — no glow, no shadow — pure Dark Souls stark
+  ctx.font = `700 ${fontSize}px 'Trajan Pro', 'Palatino Linotype', Georgia, serif`;
+  ctx.fillStyle = crimson;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(label, cx, cy + 1);
+
+  ctx.textBaseline = 'alphabetic';
+  ctx.textAlign = 'left';
+  ctx.restore();
+}
+
+export function renderGame(ctx: CanvasRenderingContext2D, state: GameRunState, showOpponentNames = true): void {
   drawBg(ctx);
   drawBgPetals(ctx, state.bgPetals);
   drawArrows(ctx, state);
@@ -753,10 +826,10 @@ export function renderGame(ctx: CanvasRenderingContext2D, state: GameRunState, s
   });
   state.bullets.forEach((b) => drawBullet(ctx, b));
   drawPlayer(ctx, state);
-  drawCrosshair(ctx, state);
   drawReloadArc(ctx, state);
   drawAbilRing(ctx, state);
-  ctx.restore();
+  drawCrosshair(ctx, state);
+  drawWaveAnn(ctx, state);
 }
 
 export function renderBg(ctx: CanvasRenderingContext2D, state: GameRunState): void {

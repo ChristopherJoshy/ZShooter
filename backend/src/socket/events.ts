@@ -70,6 +70,10 @@ export interface MatchmakingWaitingPayload {
   expandedRange: boolean;  // true after 30s MMR range expansion
 }
 
+export interface MatchmakingErrorPayload {
+  message: string;
+}
+
 // ──────────────────────────────────────────────────────────
 // Lobby
 // ──────────────────────────────────────────────────────────
@@ -326,8 +330,9 @@ export interface ServerToClientEvents {
   'presence:update':             (payload: PresenceUpdatePayload)          => void;
 
   // Matchmaking
-  'matchmaking:found':           (payload: MatchmakingFoundPayload)        => void;
-  'matchmaking:waiting':         (payload: MatchmakingWaitingPayload)      => void;
+  'matchmaking:found':            (payload: MatchmakingFoundPayload)        => void;
+  'matchmaking:waiting':          (payload: MatchmakingWaitingPayload)      => void;
+  'matchmaking:error':             (payload: MatchmakingErrorPayload)       => void;
 
   // Lobby
   'lobby:update':                (payload: LobbyUpdatePayload)             => void;

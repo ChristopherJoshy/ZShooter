@@ -3,16 +3,16 @@ import Fastify from 'fastify';
 import cookie from '@fastify/cookie';
 import cors from '@fastify/cors';
 import rateLimit from '@fastify/rate-limit';
+import mongoose from 'mongoose';
 
 import mongodbPlugin from './plugins/mongodb.js';
-import redisPlugin from './plugins/redis.js';
+import redisPlugin, { redisAvailable } from './plugins/redis.js';
 import authPlugin from './plugins/auth.js';
 
 import authRoutes from './routes/auth.js';
 import userRoutes from './routes/user.js';
 import leaderboardRoutes from './routes/leaderboard.js';
 import friendsRoutes from './routes/friends.js';
-import storyRoutes from './routes/story.js';
 import matchRoutes from './routes/match.js';
 
 import { initSocket } from './socket/index.js';
@@ -43,7 +43,9 @@ async function bootstrap() {
   });
 
   await fastify.register(cors, {
-    origin: true,
+    // Only allow the configured frontend origin — never reflect arbitrary origins.
+    // Set FRONTEND_URL=https://z-shooter.vercel.app on Render in production.
+    origin: FRONTEND_URL,
     credentials: true,
     methods: ['GET', 'POST', 'PATCH', 'OPTIONS'],
   });
@@ -51,7 +53,7 @@ async function bootstrap() {
   // Rate limiting — backed by Redis when available.
   await fastify.register(rateLimit, {
     global: false, // applied per-route, not globally
-    redis: fastify.redis,
+    redis: fastify.redis ?? undefined, // Pass undefined if Redis unavailable
   });
 
   // Apply per-route rate limit on auth endpoints.
@@ -77,11 +79,14 @@ async function bootstrap() {
   await fastify.register(userRoutes, { prefix: '/api' });
   await fastify.register(leaderboardRoutes, { prefix: '/api' });
   await fastify.register(friendsRoutes, { prefix: '/api' });
-  await fastify.register(storyRoutes, { prefix: '/api' });
   await fastify.register(matchRoutes, { prefix: '/api' });
 
-  // Health check.
-  fastify.get('/health', async () => ({ status: 'ok' }));
+  // Health check with Redis and MongoDB status.
+  fastify.get('/health', async () => ({
+    status: 'ok',
+    redis: redisAvailable,
+    mongo: mongoose.connection.readyState === 1,
+  }));
 
   // Start HTTP server and attach Socket.IO to the same port.
   // Must call fastify.listen() first to get the underlying http.Server.
