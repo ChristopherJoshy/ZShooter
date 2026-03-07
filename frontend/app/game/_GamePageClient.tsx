@@ -1,5 +1,5 @@
 'use client';
-import { useCallback, useEffect, useMemo } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { GameProvider, useGame } from '@/context/GameContext';
 import { startAudio } from '@/lib/game/audio';
 import GameCanvas from '@/components/game/GameCanvas';
@@ -11,10 +11,8 @@ import { useSocket } from '@/hooks/useSocket';
 import type { UserProfile } from '@/lib/api';
 import type { GameSave, WeaponId } from '@/lib/game/types';
 import { normalizeProfileToSave } from '@/lib/profile';
-
-function buildSaveFromProfile(profile: UserProfile): GameSave {
-  return normalizeProfileToSave(profile);
-}
+import { readSessionCache, writeSessionCache } from '@/lib/sessionCache';
+import { apiGetMe } from '@/lib/api';
 
 // Inner component — has access to GameContext.
 function GameInner({ username, userId }: { username: string; userId: string }) {
@@ -180,14 +178,72 @@ function GameInner({ username, userId }: { username: string; userId: string }) {
 }
 
 interface GamePageClientProps {
-  profile: UserProfile;
+  profile: UserProfile | null;
 }
 
 export default function GamePageClient({ profile }: GamePageClientProps) {
-  const initialSave = buildSaveFromProfile(profile);
+  const [resolvedProfile, setResolvedProfile] = useState<UserProfile | null>(profile);
+  const [networkLost, setNetworkLost] = useState(false);
+
+  // If the server could not fetch the profile (Render cold start / network
+  // blip), attempt to recover client-side using the localStorage session cache
+  // written at last login. The cache holds only identity (username + userId);
+  // the full save is fetched fresh from the backend in the background.
+  useEffect(() => {
+    if (resolvedProfile !== null) {
+      // Server gave us a fresh profile — update the cache and we're done.
+      writeSessionCache(resolvedProfile.username, resolvedProfile.userId);
+      return;
+    }
+
+    // Server returned null. Try background fetch with the cookie the browser
+    // already holds. Also read the cache so we have identity for the socket.
+    const cache = readSessionCache();
+
+    apiGetMe()
+      .then((fresh) => {
+        writeSessionCache(fresh.username, fresh.userId);
+        setResolvedProfile(fresh);
+        setNetworkLost(false);
+      })
+      .catch(() => {
+        if (cache) {
+          // Cache hit — we know who the user is but save data is unavailable.
+          // Show NetworkLostScreen so the user knows the backend is unreachable.
+          setNetworkLost(true);
+        } else {
+          // No cache and no backend response — redirect to login.
+          window.location.href = '/';
+        }
+      });
+  // Run once on mount only.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  if (resolvedProfile === null && !networkLost) {
+    // Still waiting for background fetch — render nothing (brief flash).
+    return null;
+  }
+
+  if (networkLost || resolvedProfile === null) {
+    return (
+      <div id="app-wrap">
+        <div id="app">
+          <NetworkLostScreen
+            isReconnecting={true}
+            serverAvailable={false}
+            onReturnToGarden={() => { window.location.href = '/'; }}
+            onRetry={() => { window.location.reload(); }}
+          />
+        </div>
+      </div>
+    );
+  }
+
+  const initialSave = normalizeProfileToSave(resolvedProfile);
   return (
-    <GameProvider initialSave={initialSave} initialUsername={profile.username}>
-      <GameInner username={profile.username} userId={profile.userId} />
+    <GameProvider initialSave={initialSave} initialUsername={resolvedProfile.username}>
+      <GameInner username={resolvedProfile.username} userId={resolvedProfile.userId} />
     </GameProvider>
   );
 }

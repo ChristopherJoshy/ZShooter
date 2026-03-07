@@ -3,6 +3,7 @@ import { useState, useCallback } from 'react';
 import { actionLogin, actionRegister } from '@/app/actions/auth';
 import { apiLogout, apiGetMe } from '@/lib/api';
 import type { UserProfile } from '@/lib/api';
+import { writeSessionCache, clearSessionCache } from '@/lib/sessionCache';
 
 export function useAuth() {
   const [loading, setLoading] = useState(false);
@@ -15,7 +16,11 @@ export function useAuth() {
       // zf_token on the Vercel domain, bypassing the proxy Set-Cookie issue.
       const result = await actionLogin(username, password);
       if (!result.ok) { setError(result.error); return null; }
-      return await apiGetMe();
+      const profile = await apiGetMe();
+      // Cache identity so /game renders instantly on future visits even if
+      // the Render backend is slow to wake (free-tier cold start).
+      writeSessionCache(profile.username, profile.userId);
+      return profile;
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Login failed');
       return null;
@@ -29,7 +34,9 @@ export function useAuth() {
     try {
       const result = await actionRegister(username, password);
       if (!result.ok) { setError(result.error); return null; }
-      return await apiGetMe();
+      const profile = await apiGetMe();
+      writeSessionCache(profile.username, profile.userId);
+      return profile;
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Registration failed');
       return null;
@@ -39,6 +46,9 @@ export function useAuth() {
   }, []);
 
   const logout = useCallback(async () => {
+    // Clear the identity cache before logging out so the next visitor
+    // to this device does not see stale identity data.
+    clearSessionCache();
     await apiLogout();
     window.location.href = '/';
   }, []);
