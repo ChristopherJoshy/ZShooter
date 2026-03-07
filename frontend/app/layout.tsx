@@ -7,6 +7,7 @@ const quicksand = Quicksand({
   weight: ['300', '400', '600', '700'],
   variable: '--font-quicksand',
   display: 'swap',
+  preload: false, // multiple weights — skip preload to avoid unused-preload warnings
 });
 
 const cormorant = Cormorant_Garamond({
