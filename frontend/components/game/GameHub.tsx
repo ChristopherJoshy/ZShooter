@@ -381,6 +381,11 @@ export default function GameHub({
           <section className="hub-view">
             <div className="hub-view-header">
               <div className="hub-view-title">Loadout</div>
+              <div className="hub-view-seeds">
+                <GameIcon name="seed" className="hub-view-seeds-icon" />
+                <span className="hub-view-seeds-count">{save.seeds}</span>
+                <span className="hub-view-seeds-lbl">seeds</span>
+              </div>
             </div>
             <div className="hub-loadout-columns">
               <div className="hub-card">
