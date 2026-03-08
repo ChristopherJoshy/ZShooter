@@ -5,6 +5,7 @@ import { makePlayer, newBgPetal } from '@/lib/game/entities';
 import { startAudio, sfx } from '@/lib/game/audio';
 import { renderGame, renderBg } from '@/lib/game/renderer';
 import { updateGame, beginWave, updParticles } from '@/lib/game/updater';
+import { updateHudDOM } from '@/lib/game/hudUpdater';
 import { useGameLoop } from '@/hooks/useGameLoop';
 import { useGame, getStats } from '@/context/GameContext';
 import type { GameRunState } from '@/lib/game/types';
@@ -69,7 +70,6 @@ export default function GameCanvas({ isTouch, isMobile, onReturn, opponentNames 
   const stateRef = useRef<GameRunState | null>(null);
   const playingRef = useRef(false);
   const runStartRef = useRef(0);
-  const hudFrameRef = useRef(0);
 
   // Initialise run state when game starts; keep ambient state for background when idle
   useEffect(() => {
@@ -210,12 +210,9 @@ export default function GameCanvas({ isTouch, isMobile, onReturn, opponentNames 
       }
       renderGame(ctx, state, settings.showOpponentNames, isMobile);
       if (state.shake.m > 0) ctx.restore();
-      // Throttle HUD React updates to ~20 fps (every 3 game frames at 60 fps)
-      // to reduce React re-render overhead while keeping HUD visually smooth.
-      hudFrameRef.current = (hudFrameRef.current + 1) % 3;
-      if (hudFrameRef.current === 0) {
-        setRunState({ ...state });
-      }
+      // Update HUD via direct DOM manipulation to bypass React re-renders completely,
+      // avoiding object allocations and GC pauses.
+      updateHudDOM(state);
     } else {
       // Garden / results — render ambient background with floating petals.
       // stateRef holds a minimal ambient state when not playing.
