@@ -35,6 +35,8 @@ body {
   box-shadow: 0 24px 80px rgba(140,110,80,.3), 0 6px 24px rgba(140,110,80,.18);
   transform: translate(-50%, -50%);  /* fallback before JS runs */
   transform-origin: center center;
+  display: grid;
+  place-items: center;
 }
 
 canvas {
@@ -1080,6 +1082,25 @@ canvas {
 #comboFill { height: 100%; background: #c4956a; border-radius: 4px; }
 
 #hudBot { position: absolute; bottom: 16px; left: 50%; transform: translateX(-50%); font-size: 8px; letter-spacing: 2px; color: #b0a090; font-weight: 600; }
+
+/* ── HUD — Mobile Overrides ────────────────────────────────────────────── */
+#hud.is-mobile #hudL { top: 24px; left: 24px; gap: 6px; }
+#hud.is-mobile #hudR { top: 24px; right: 24px; }
+#hud.is-mobile #hudC { top: 0; }
+#hud.is-mobile #hudBot { bottom: 24px; font-size: 11px; }
+#hud.is-mobile .wave-prog-bar { top: 0; }
+#hud.is-mobile .hl { font-size: 11px; }
+#hud.is-mobile #healthBar { width: 160px; height: 7px; }
+#hud.is-mobile #ammoBar { max-width: 160px; gap: 4px; }
+#hud.is-mobile .ap { width: 8px; height: 8px; }
+#hud.is-mobile #abilBar { width: 160px; height: 5px; }
+#hud.is-mobile #abilStatus { font-size: 11px; }
+#hud.is-mobile #abilLabel { font-size: 11px; }
+#hud.is-mobile #scoreVal { font-size: 32px; }
+#hud.is-mobile .sc-lbl { font-size: 11px; }
+#hud.is-mobile #waveLabel { font-size: 12px; padding-top: 24px; }
+#hud.is-mobile #comboVal { font-size: 18px; }
+#hud.is-mobile #comboBar { width: 90px; height: 4px; }
 
 /* ── Pause overlay ─────────────────────────────────────────────────────── */
 #pauseOv {
@@ -2180,13 +2201,15 @@ canvas {
   /* In landscape, controls hug the sides */
   .tc-left-mobile {
     width: 40%;
+    padding-left: var(--crop-x, 0px);
   }
   .tc-right-mobile {
     width: 35%;
+    padding-right: var(--crop-x, 0px);
   }
   .tc-abil-btn-mobile {
-    right: 20px;
-    bottom: 20px;
+    right: calc(20px + var(--crop-x, 0px));
+    bottom: calc(20px + var(--crop-y, 0px));
     width: 72px;
     height: 72px;
   }

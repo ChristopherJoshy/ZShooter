@@ -92,20 +92,74 @@ export function drawBgPetals(ctx: CanvasRenderingContext2D, petals: BgPetal[]): 
   ctx.globalAlpha = 1;
 }
 
-export function drawArrows(ctx: CanvasRenderingContext2D, state: GameRunState): void {
+export function drawArrows(ctx: CanvasRenderingContext2D, state: GameRunState, isMobile = false): void {
   const mg = 26;
+  const p = state.player;
+  if (!p) return;
+
+  // 1. Determine the "visible" rectangle within the 1050x700 space.
+  // On PC (Fit), it's always the full 1050x700.
+  // On Mobile (Fill), it depends on the device aspect ratio.
+  let vX = 0, vY = 0, vW = W, vH = H;
+  if (isMobile && typeof window !== 'undefined') {
+    const aspect = window.innerWidth / window.innerHeight;
+    if (aspect > W / H) {
+      // Screen is wider than 1.5:1 (e.g. 19.5:9), so we crop top/bottom.
+      vW = W;
+      vH = W / aspect;
+    } else {
+      // Screen is taller than 1.5:1, so we crop sides.
+      vH = H;
+      vW = H * aspect;
+    }
+    vX = (W - vW) / 2;
+    vY = (H - vH) / 2;
+  }
+
+  const rect = {
+    l: vX + mg,
+    t: vY + mg,
+    r: vX + vW - mg,
+    b: vY + vH - mg,
+  };
+
   state.enemies.forEach((e) => {
-    if (e.x > -5 && e.x < W + 5 && e.y > -5 && e.y < H + 5) return;
-    const ang = Math.atan2(e.y - H / 2, e.x - W / 2);
-    const ax = clamp(W / 2 + Math.cos(ang) * W * 0.44, mg, W - mg);
-    const ay = clamp(H / 2 + Math.sin(ang) * H * 0.42, mg, H - mg);
+    // 2. Only show arrows for enemies outside the currently visible area.
+    if (e.x > vX - 5 && e.x < vX + vW + 5 && e.y > vY - 5 && e.y < vY + vH + 5) return;
+
+    // 3. Direction from player to enemy is more intuitive than screen center.
+    const dx = e.x - p.x;
+    const dy = e.y - p.y;
+    const ang = Math.atan2(dy, dx);
+
+    // 4. Find intersection of the ray (p -> enemy) with the visible rectangle.
+    // We use a simple parametric intersection for a ray inside a box.
+    let tX = Infinity;
+    if (dx > 0) tX = (rect.r - p.x) / dx;
+    else if (dx < 0) tX = (rect.l - p.x) / dx;
+
+    let tY = Infinity;
+    if (dy > 0) tY = (rect.b - p.y) / dy;
+    else if (dy < 0) tY = (rect.t - p.y) / dy;
+
+    const t = Math.min(tX, tY);
+    
+    // Position of the arrow
+    let ax = p.x + dx * t;
+    let ay = p.y + dy * t;
+    
+    // Safety clamp (e.g. if player is outside the visible rect due to extreme aspect ratios)
+    ax = clamp(ax, rect.l, rect.r);
+    ay = clamp(ay, rect.t, rect.b);
+
     ctx.save();
     ctx.translate(ax, ay);
     ctx.rotate(ang);
-    ctx.globalAlpha = 0.45;
+    ctx.globalAlpha = 0.55;
     ctx.fillStyle = e.col;
     ctx.beginPath();
-    ctx.moveTo(9, 0); ctx.lineTo(-5, -4.5); ctx.lineTo(-5, 4.5);
+    const szm = isMobile ? 1.4 : 1.0;
+    ctx.moveTo(10 * szm, 0); ctx.lineTo(-6 * szm, -5.5 * szm); ctx.lineTo(-6 * szm, 5.5 * szm);
     ctx.closePath(); ctx.fill();
     ctx.restore();
   });
@@ -777,7 +831,7 @@ function toRoman(n: number): string {
   return r;
 }
 
-export function drawWaveAnn(ctx: CanvasRenderingContext2D, state: GameRunState): void {
+export function drawWaveAnn(ctx: CanvasRenderingContext2D, state: GameRunState, isMobile?: boolean): void {
   const { waveAnnTimer, wave } = state;
   if (waveAnnTimer <= 0) return;
   const MAX = 180;
@@ -795,15 +849,15 @@ export function drawWaveAnn(ctx: CanvasRenderingContext2D, state: GameRunState):
   const ruleCol = isBoss ? 'rgba(204,26,26,0.50)' : 'rgba(160,0,0,0.45)';
   const fontSize = isBoss ? 42 : 38;
   const cx = W / 2;
-  const cy = H / 2;
+  const cy = isMobile ? 120 : H / 2;
   const bandH = 90;
 
   ctx.save();
 
-  // Full-width black band
+  // Full-width black band (extra wide for mobile cropping)
   ctx.globalAlpha = a * 0.82;
   ctx.fillStyle = '#000000';
-  ctx.fillRect(0, cy - bandH / 2, W, bandH);
+  ctx.fillRect(-W, cy - bandH / 2, W * 3, bandH);
 
   ctx.globalAlpha = a;
 
@@ -813,12 +867,12 @@ export function drawWaveAnn(ctx: CanvasRenderingContext2D, state: GameRunState):
   ctx.strokeStyle = ruleCol;
   ctx.lineWidth = 1;
   ctx.beginPath();
-  ctx.moveTo(0, ruleY1); ctx.lineTo(W, ruleY1);
-  ctx.moveTo(0, ruleY2); ctx.lineTo(W, ruleY2);
+  ctx.moveTo(-W, ruleY1); ctx.lineTo(W * 2, ruleY1);
+  ctx.moveTo(-W, ruleY2); ctx.lineTo(W * 2, ruleY2);
   ctx.stroke();
 
   // Main text — no glow, no shadow — pure Dark Souls stark
-  ctx.font = `700 ${fontSize}px 'Trajan Pro', 'Palatino Linotype', Georgia, serif`;
+  ctx.font = `700 ${fontSize}px 'Trajan Pro', 'Palatino Linotype', 'Book Antiqua', Palatino, serif`;
   ctx.fillStyle = crimson;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
@@ -829,11 +883,11 @@ export function drawWaveAnn(ctx: CanvasRenderingContext2D, state: GameRunState):
   ctx.restore();
 }
 
-export function renderGame(ctx: CanvasRenderingContext2D, state: GameRunState, showOpponentNames = true): void {
+export function renderGame(ctx: CanvasRenderingContext2D, state: GameRunState, showOpponentNames = true, isMobile = false): void {
   const tck = Date.now() * 0.001;
   drawBg(ctx);
   drawBgPetals(ctx, state.bgPetals);
-  drawArrows(ctx, state);
+  drawArrows(ctx, state, isMobile);
   state.seedDrops.forEach((s) => drawSeed(ctx, s));
   state.powerups.forEach((pw) => drawPowerup(ctx, pw));
   state.particles.forEach((p) => drawParticle(ctx, p));
@@ -847,10 +901,10 @@ export function renderGame(ctx: CanvasRenderingContext2D, state: GameRunState, s
   drawReloadArc(ctx, state);
   drawAbilRing(ctx, state);
   drawCrosshair(ctx, state);
-  drawWaveAnn(ctx, state);
+  drawWaveAnn(ctx, state, isMobile);
 }
 
-export function renderBg(ctx: CanvasRenderingContext2D, state: GameRunState): void {
+export function renderBg(ctx: CanvasRenderingContext2D, state: GameRunState, isMobile = false): void {
   drawBg(ctx);
   drawBgPetals(ctx, state.bgPetals);
   state.particles.forEach((p) => drawParticle(ctx, p));

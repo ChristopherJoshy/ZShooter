@@ -36,51 +36,47 @@ export function useGameScale(): { isTouch: boolean; isMobile: boolean } {
       const vp = window.visualViewport;
       const vw = vp ? vp.width  : window.innerWidth;
       const vh = vp ? vp.height : window.innerHeight;
+
       const isMob = touch && vw <= 1024;
       setIsMobile(isMob);
 
-      // Both paths use the same centering technique:
-      //   position: absolute; top: 50%; left: 50%;
-      //   transform-origin: top left;
-      //   transform: translate(-50%, -50%) scale(N);
-      //
-      // This moves the element's top-left corner to the viewport centre,
-      // then the translate(-50%,-50%) shifts it back by half its own size so
-      // its centre aligns with the viewport centre. The subsequent scale()
-      // radiates outward from that already-centred origin — no margin math
-      // needed, no layout side-effects from CSS transform.
+      // Use Fill for all touch devices to use full screen, Fit for desktop/mouse.
+      const scale = touch ? Math.max(vw / GAME_W, vh / GAME_H) : Math.min(vw / GAME_W, vh / GAME_H);
+      
+      // On mobile/touch, we resize the container to fill the viewport (Full Screen).
+      // On PC, we keep it fixed at 1050x700 (Centered Box).
+      const visibleW = touch ? vw / scale : GAME_W;
+      const visibleH = touch ? vh / scale : GAME_H;
 
-      el.style.width = GAME_W + 'px';
-      el.style.height = GAME_H + 'px';
+      el.style.width = visibleW + 'px';
+      el.style.height = visibleH + 'px';
+      
       el.style.position = 'absolute';
       el.style.top = '50%';
       el.style.left = '50%';
-      // transform-origin must be 'center center' (the browser default).
-      // With top:50%/left:50%, translate(-50%,-50%) places the element's
-      // centre exactly at the viewport centre.  scale(N) with a centre origin
-      // then radiates symmetrically around that point — correct at any scale.
-      // Using 'top left' was wrong: scale would expand from the corner and the
-      // visual centre would drift by (525*(N-1), 350*(N-1)) pixels.
       el.style.transformOrigin = 'center center';
-      // Clear any leftover margin from a previous path
+      el.style.transform = `translate(-50%, -50%) scale(${scale})`;
+      
+      // Clear any leftover margin
       el.style.marginLeft = '';
       el.style.marginTop = '';
 
-      if (isMob) {
-        // Fill: scale so the larger dimension covers the viewport (may crop).
-        const scale = Math.max(vw / GAME_W, vh / GAME_H);
-        el.style.transform = `translate(-50%, -50%) scale(${scale})`;
+      // Calculate crop/safe area offsets (how much we are shifted relative to game center)
+      // Since the canvas is 1050x700 but the container is now visibleW x visibleH,
+      // we need to offset children that want to stay in "game space" vs "screen space".
+      // But for HUD, we actually want it to stay in "screen space" (the container).
+      const cropX = Math.max(0, (GAME_W - visibleW) / 2);
+      const cropY = Math.max(0, (GAME_H - visibleH) / 2);
+      el.style.setProperty('--crop-x', `${cropX}px`);
+      el.style.setProperty('--crop-y', `${cropY}px`);
+
+      if (touch) {
         el.style.borderRadius = '0';
         el.style.boxShadow = 'none';
-
         if (wrap) wrap.style.background = '#1a1410';
       } else {
-        // Fit: scale so the entire canvas is visible (letterbox if needed).
-        const scale = Math.min(vw / GAME_W, vh / GAME_H);
-        el.style.transform = `translate(-50%, -50%) scale(${scale})`;
         el.style.borderRadius = '';
         el.style.boxShadow = '';
-
         if (wrap) wrap.style.background = '';
       }
     }

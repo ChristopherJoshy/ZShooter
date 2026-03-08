@@ -208,7 +208,7 @@ export default function GameCanvas({ isTouch, isMobile, onReturn, opponentNames 
         const sy = (Math.random() - 0.5) * state.shake.m * 2;
         ctx.translate(sx + state.shake.x, sy + state.shake.y);
       }
-      renderGame(ctx, state, settings.showOpponentNames);
+      renderGame(ctx, state, settings.showOpponentNames, isMobile);
       if (state.shake.m > 0) ctx.restore();
       // Throttle HUD React updates to ~20 fps (every 3 game frames at 60 fps)
       // to reduce React re-render overhead while keeping HUD visually smooth.
@@ -220,10 +220,10 @@ export default function GameCanvas({ isTouch, isMobile, onReturn, opponentNames 
       // Garden / results — render ambient background with floating petals.
       // stateRef holds a minimal ambient state when not playing.
       const ambient = stateRef.current!;
-      renderBg(ctx, ambient);
+      renderBg(ctx, ambient, isMobile);
       updParticles(ambient, dt);
     }
-  }, [handleEndGame, handleSeedCollect, setRunState, settings.showOpponentNames]);
+  }, [handleEndGame, handleSeedCollect, setRunState, settings.showOpponentNames, isMobile]);
 
   useGameLoop(true, tick); // always running for background animation
 
@@ -304,7 +304,7 @@ export default function GameCanvas({ isTouch, isMobile, onReturn, opponentNames 
       />
       {isPlaying && runState && (
         <>
-          <HUD state={runState} />
+          <HUD state={runState} isMobile={isMobile} />
           <PauseOverlay visible={runState.paused} onReturn={handleReturnToGarden} />
         </>
       )}

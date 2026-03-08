@@ -5,9 +5,10 @@ import type { GameRunState } from '@/lib/game/types';
 
 interface HUDProps {
   state: GameRunState;
+  isMobile?: boolean;
 }
 
-export default function HUD({ state }: HUDProps) {
+export default function HUD({ state, isMobile }: HUDProps) {
   const { settings } = useGame();
   const { player, stats, score, wave, combo, comboTimer, waveTrans, waveLeft,
     abilityCooldown, abilityActive } = state;
@@ -36,7 +37,7 @@ export default function HUD({ state }: HUDProps) {
     : 0;
 
   return (
-    <div id="hud" style={{ position: 'absolute', inset: 0, pointerEvents: 'none' }}>
+    <div id="hud" className={isMobile ? 'is-mobile' : ''} style={{ position: 'absolute', inset: 0, pointerEvents: 'none' }}>
       {/* Top — wave progress bar */}
       {!waveTrans && (
         <div className="wave-prog-bar">
