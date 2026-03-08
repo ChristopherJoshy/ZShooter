@@ -55,7 +55,13 @@ export function useGameScale(): { isTouch: boolean; isMobile: boolean } {
       el.style.position = 'absolute';
       el.style.top = '50%';
       el.style.left = '50%';
-      el.style.transformOrigin = 'top left';
+      // transform-origin must be 'center center' (the browser default).
+      // With top:50%/left:50%, translate(-50%,-50%) places the element's
+      // centre exactly at the viewport centre.  scale(N) with a centre origin
+      // then radiates symmetrically around that point — correct at any scale.
+      // Using 'top left' was wrong: scale would expand from the corner and the
+      // visual centre would drift by (525*(N-1), 350*(N-1)) pixels.
+      el.style.transformOrigin = 'center center';
       // Clear any leftover margin from a previous path
       el.style.marginLeft = '';
       el.style.marginTop = '';
