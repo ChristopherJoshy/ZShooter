@@ -70,26 +70,25 @@ export function drawBg(ctx: CanvasRenderingContext2D): void {
   ctx.drawImage(getBgCache(), 0, 0);
 }
 
-export function drawBgPetals(ctx: CanvasRenderingContext2D, petals: BgPetal[]): void {
+export function drawBgPetals(ctx: CanvasRenderingContext2D, petals: BgPetal[], dt: number = 1): void {
+  ctx.save();
   petals.forEach((p) => {
-    p.sw += 0.016;
-    p.x += p.vx + Math.sin(p.sw) * 0.25;
-    p.y += p.vy;
-    p.rot += p.rotV;
+    p.sw += 0.016 * dt;
+    p.x += (p.vx + Math.sin(p.sw) * 0.25) * dt;
+    p.y += p.vy * dt;
+    p.rot += p.rotV * dt;
     if (p.y > H + 15) { p.y = -10; p.x = rnd(0, W); }
     if (p.x < -10) p.x = W + 10;
     if (p.x > W + 10) p.x = -10;
-    ctx.save();
+    
     ctx.globalAlpha = p.a * 0.65;
-    ctx.translate(p.x, p.y);
-    ctx.rotate(p.rot);
-    ctx.fillStyle = p.col;
+    ctx.setTransform(Math.cos(p.rot), Math.sin(p.rot), -Math.sin(p.rot), Math.cos(p.rot), p.x, p.y);
     ctx.beginPath();
     ctx.ellipse(0, 0, p.sz, p.sz * 1.65, 0, 0, Math.PI * 2);
+    ctx.fillStyle = p.col;
     ctx.fill();
-    ctx.restore();
   });
-  ctx.globalAlpha = 1;
+  ctx.restore();
 }
 
 export function drawArrows(ctx: CanvasRenderingContext2D, state: GameRunState, isMobile = false): void {
@@ -883,10 +882,10 @@ export function drawWaveAnn(ctx: CanvasRenderingContext2D, state: GameRunState, 
   ctx.restore();
 }
 
-export function renderGame(ctx: CanvasRenderingContext2D, state: GameRunState, showOpponentNames = true, isMobile = false): void {
+export function renderGame(ctx: CanvasRenderingContext2D, state: GameRunState, showOpponentNames = true, isMobile = false, dt = 1): void {
   const tck = Date.now() * 0.001;
   drawBg(ctx);
-  drawBgPetals(ctx, state.bgPetals);
+  drawBgPetals(ctx, state.bgPetals, dt);
   drawArrows(ctx, state, isMobile);
   state.seedDrops.forEach((s) => drawSeed(ctx, s));
   state.powerups.forEach((pw) => drawPowerup(ctx, pw));
@@ -904,8 +903,8 @@ export function renderGame(ctx: CanvasRenderingContext2D, state: GameRunState, s
   drawWaveAnn(ctx, state, isMobile);
 }
 
-export function renderBg(ctx: CanvasRenderingContext2D, state: GameRunState, isMobile = false): void {
+export function renderBg(ctx: CanvasRenderingContext2D, state: GameRunState, isMobile = false, dt = 1): void {
   drawBg(ctx);
-  drawBgPetals(ctx, state.bgPetals);
+  drawBgPetals(ctx, state.bgPetals, dt);
   state.particles.forEach((p) => drawParticle(ctx, p));
 }

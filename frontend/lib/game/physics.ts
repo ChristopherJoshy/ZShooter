@@ -5,6 +5,16 @@ export function lerp(a: number, b: number, t: number): number {
   return a + (b - a) * t;
 }
 
+/** Frame-independent lerp: t is the weight at 60fps. */
+export function lerpDt(a: number, b: number, t: number, dt: number): number {
+  return a + (b - a) * (1 - Math.pow(1 - t, dt));
+}
+
+/** Frame-independent damping: d is the friction at 60fps. */
+export function expDt(v: number, d: number, dt: number): number {
+  return v * Math.pow(d, dt);
+}
+
 export function clamp(v: number, lo: number, hi: number): number {
   return Math.max(lo, Math.min(hi, v));
 }

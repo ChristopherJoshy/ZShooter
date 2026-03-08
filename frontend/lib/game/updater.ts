@@ -1,6 +1,6 @@
 // Game logic update functions — ported 1:1 from zen-striker.html.
 import { W, H, PAL, COMBO_DUR, ABIL_DUR } from './constants';
-import { clamp, lerp, rnd } from './physics';
+import { clamp, lerp, rnd, lerpDt, expDt } from './physics';
 import { makeBullet, spawnAtEdge, makeSeedDrops, makePowerup, makeEnemy } from './entities';
 import { sfx } from './audio';
 import { getWaveCfg } from './waves';
@@ -16,11 +16,11 @@ export function addShake(state: GameRunState, m: number): void {
   state.shake.m = Math.min(state.shake.m + m, 18);
 }
 
-export function updShake(state: GameRunState): void {
+export function updShake(state: GameRunState, dt: number): void {
   if (state.shake.m > 0) {
     state.shake.x = (Math.random() - 0.5) * state.shake.m;
     state.shake.y = (Math.random() - 0.5) * state.shake.m;
-    state.shake.m *= 0.88;
+    state.shake.m *= Math.pow(0.88, dt);
     if (state.shake.m < 0.5) state.shake.m = 0;
   } else {
     state.shake.x = 0; state.shake.y = 0;
@@ -244,8 +244,8 @@ export function updPlayer(state: GameRunState, dt: number, onEndGame: EndGameFn)
   const mv = mx || my; const ln = Math.hypot(mx, my) || 1;
   // Player speed scales +2% per wave completed (wave 1 = base, wave 2 = +2%, etc.)
   const effectiveSpeed = p.speed * (1 + (state.wave - 1) * 0.02);
-  p.vx = lerp(p.vx, mv ? (mx / ln) * effectiveSpeed : 0, 0.22);
-  p.vy = lerp(p.vy, mv ? (my / ln) * effectiveSpeed : 0, 0.22);
+  p.vx = lerpDt(p.vx, mv ? (mx / ln) * effectiveSpeed : 0, 0.22, dt);
+  p.vy = lerpDt(p.vy, mv ? (my / ln) * effectiveSpeed : 0, 0.22, dt);
   p.x = clamp(p.x + p.vx * dt, p.r, W - p.r);
   p.y = clamp(p.y + p.vy * dt, p.r, H - p.r);
   p.angle = Math.atan2(state.mouseY - p.y, state.mouseX - p.x);
@@ -414,12 +414,16 @@ export function updEnemies(state: GameRunState, dt: number, onEndGame: EndGameFn
       const o = state.enemies[j2];
       const ex = e.x - o.x; const ey = e.y - o.y; const ed = Math.hypot(ex, ey) || 1;
       const mn = e.r + o.r + 6;
-      if (ed < mn) { sx += ex / ed * (mn - ed) * 0.05; sy += ey / ed * (mn - ed) * 0.05; }
+      if (ed < mn) { 
+        const push = (mn - ed) * 0.05 * dt;
+        sx += ex / ed * push; 
+        sy += ey / ed * push; 
+      }
     }
     // Separation from player — prevent enemies from sitting inside the player
     const playerGap = p.r + e.r + 4;
     if (dist < playerGap) {
-      const pushStr = (playerGap - dist) * 0.12;
+      const pushStr = (playerGap - dist) * 0.12 * dt;
       sx -= (dx / dist) * pushStr;
       sy -= (dy / dist) * pushStr;
     }
@@ -428,24 +432,24 @@ export function updEnemies(state: GameRunState, dt: number, onEndGame: EndGameFn
     if (e.type === 'chaser') {
       // Chasers weave aggressively, side-to-side intensity grows with wave
       const weave = Math.sin(e.life * 0.13) * (1.4 + state.wave * 0.04);
-      e.vx += (dx / dist) * e.speed * 0.22 + (0 - dy / dist) * weave * e.speed * 0.18;
-      e.vy += (dy / dist) * e.speed * 0.22 + (dx / dist) * weave * e.speed * 0.18;
+      e.vx += ((dx / dist) * e.speed * 0.22 + (0 - dy / dist) * weave * e.speed * 0.18) * dt;
+      e.vy += ((dy / dist) * e.speed * 0.22 + (dx / dist) * weave * e.speed * 0.18) * dt;
     } else if (e.type === 'tank') {
       // Tanks are relentless but slow, gaining speed below 50% HP
       const sp2 = e.hp < e.maxHp * 0.5 ? e.speed * 1.4 : e.speed;
-      e.vx += (dx / dist) * sp2 * 0.18; e.vy += (dy / dist) * sp2 * 0.18;
+      e.vx += (dx / dist) * sp2 * 0.18 * dt; e.vy += (dy / dist) * sp2 * 0.18 * dt;
     } else if (e.type === 'splitter') {
       // Splitters lumber forward with slight erratic jitter
       const jitterX = Math.random() < 0.1 ? rnd(-0.5, 0.5) : 0;
       const jitterY = Math.random() < 0.1 ? rnd(-0.5, 0.5) : 0;
-      e.vx += (dx / dist + jitterX) * e.speed * 0.18; 
-      e.vy += (dy / dist + jitterY) * e.speed * 0.18;
+      e.vx += (dx / dist + jitterX) * e.speed * 0.18 * dt; 
+      e.vy += (dy / dist + jitterY) * e.speed * 0.18 * dt;
     } else if (e.type === 'speeder') {
       // Speeders have wild erratic darting movement — high burst, sharp direction changes
       const dart = Math.max(0.2, Math.sin(e.life * 0.22) * 2.2 + 0.6);
       const sideDart = Math.cos(e.life * 0.18) * 0.5;
-      e.vx += (dx / dist) * e.speed * 0.28 * dart + (0 - dy / dist) * sideDart;
-      e.vy += (dy / dist) * e.speed * 0.28 * dart + (dx / dist) * sideDart;
+      e.vx += ((dx / dist) * e.speed * 0.28 * dart + (0 - dy / dist) * sideDart) * dt;
+      e.vy += ((dy / dist) * e.speed * 0.28 * dart + (dx / dist) * sideDart) * dt;
     } else if (e.type === 'shooter') {
       // Shooters orbit at wave-scaled distance, retreat aggressively if player gets close
       const targetDist = Math.max(120, 180 - state.wave * 2);
@@ -453,22 +457,25 @@ export function updEnemies(state: GameRunState, dt: number, onEndGame: EndGameFn
       
       if (dist < 150) {
         // Aggressive retreat + sharp orbit
-        e.vx += (dx / dist) * diff * 0.012 + (0 - dy / dist) * 0.55;
-        e.vy += (dy / dist) * diff * 0.012 + (dx / dist) * 0.55;
+        e.vx += ((dx / dist) * diff * 0.012 + (0 - dy / dist) * 0.55) * dt;
+        e.vy += ((dy / dist) * diff * 0.012 + (dx / dist) * 0.55) * dt;
       } else {
         // Tighter orbit with more speed
-        e.vx += (dx / dist) * diff * 0.006 + (0 - dy / dist) * 0.45;
-        e.vy += (dy / dist) * diff * 0.006 + (dx / dist) * 0.45;
+        e.vx += ((dx / dist) * diff * 0.006 + (0 - dy / dist) * 0.45) * dt;
+        e.vy += ((dy / dist) * diff * 0.006 + (dx / dist) * 0.45) * dt;
       }
     } else if (e.type === 'boss') {
       const ph = e.hp < e.maxHp * 0.4 ? 2 : e.hp < e.maxHp * 0.7 ? 1 : 0;
       e.phase = ph;
       const bsp = e.speed * (1.3 + ph * 0.7);
-      e.vx += (dx / dist) * bsp * 0.14; e.vy += (dy / dist) * bsp * 0.14;
-      if (Math.sin(e.life * 0.028) > 0.25) { e.vx += (0 - dy / dist) * 0.65; e.vy += (dx / dist) * 0.65; }
+      e.vx += (dx / dist) * bsp * 0.14 * dt; e.vy += (dy / dist) * bsp * 0.14 * dt;
+      if (Math.sin(e.life * 0.028) > 0.25) { 
+        e.vx += (0 - dy / dist) * 0.65 * dt; 
+        e.vy += (dx / dist) * 0.65 * dt; 
+      }
     } else if (e.type === 'stalker') {
       // Stalker: aggressively pursues, teleports with wave-scaled frequency
-      e.vx += (dx / dist) * e.speed * 0.22; e.vy += (dy / dist) * e.speed * 0.22;
+      e.vx += (dx / dist) * e.speed * 0.22 * dt; e.vy += (dy / dist) * e.speed * 0.22 * dt;
       if (e.flickering) {
         e.flickerTimer = (e.flickerTimer ?? 0) - dt;
         if ((e.flickerTimer ?? 0) <= 0) {
@@ -495,7 +502,8 @@ export function updEnemies(state: GameRunState, dt: number, onEndGame: EndGameFn
     }
     const ms = e.speed * 1.25; const sv = Math.hypot(e.vx, e.vy);
     if (sv > ms) { e.vx = e.vx / sv * ms; e.vy = e.vy / sv * ms; }
-    e.vx = (e.vx + sx) * 0.9; e.vy = (e.vy + sy) * 0.9;
+    e.vx = expDt(e.vx + sx, 0.9, dt); 
+    e.vy = expDt(e.vy + sy, 0.9, dt);
     e.x += e.vx * dt; e.y += e.vy * dt;
     if (e.type === 'speeder') { e.trail.push({ x: e.x, y: e.y }); if (e.trail.length > 8) e.trail.shift(); }
 
@@ -630,8 +638,8 @@ export function updBullets(state: GameRunState, dt: number, onEndGame: EndGameFn
         const spd = Math.hypot(b.vx, b.vy) || 9;
         const tx = nearest.dx / nearest.dist * spd;
         const ty = nearest.dy / nearest.dist * spd;
-        b.vx = b.vx * 0.75 + tx * 0.25;
-        b.vy = b.vy * 0.75 + ty * 0.25;
+        b.vx = lerpDt(b.vx, tx, 0.25, dt);
+        b.vy = lerpDt(b.vy, ty, 0.25, dt);
         // Re-normalize to original speed
         const newSpd = Math.hypot(b.vx, b.vy) || 1;
         b.vx = b.vx / newSpd * spd;
@@ -678,7 +686,8 @@ export function updParticles(state: GameRunState, dt: number): void {
     const p = state.particles[i];
     p.x += p.vx * dt; p.y += p.vy * dt;
     if (!p.isText) p.vy += 0.035 * dt;
-    p.vx *= Math.pow(0.968, dt); p.vy *= Math.pow(0.968, dt);
+    p.vx = expDt(p.vx, 0.968, dt); 
+    p.vy = expDt(p.vy, 0.968, dt);
     p.life -= dt;
     if (p.life <= 0) state.particles.splice(i, 1);
   }
@@ -698,7 +707,8 @@ export function updSeeds(state: GameRunState, dt: number, onSeedCollect: () => v
       s.vx += Math.cos(ang) * pull * dt * 0.4;
       s.vy += Math.sin(ang) * pull * dt * 0.4;
     }
-    s.vx *= Math.pow(0.93, dt); s.vy *= Math.pow(0.93, dt);
+    s.vx = expDt(s.vx, 0.93, dt);
+    s.vy = expDt(s.vy, 0.93, dt);
     s.vy += 0.04 * dt;
     s.y = clamp(s.y + s.vy * dt, 5, H - 5); s.x += s.vx * dt;
     if (d < p.r + s.sz + 4) {
@@ -745,7 +755,7 @@ export function updCombo(state: GameRunState, dt: number): void {
 
 export function updateGame(state: GameRunState, dt: number, onEndGame: EndGameFn, onSeedCollect: () => void): void {
   if (state.paused) return;
-  updShake(state);
+  updShake(state, dt);
   updPlayer(state, dt, onEndGame);
   updEnemies(state, dt, onEndGame);
   updBullets(state, dt, onEndGame);
