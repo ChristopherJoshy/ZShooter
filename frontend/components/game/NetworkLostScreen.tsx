@@ -1,5 +1,6 @@
 'use client';
 
+import { useEffect, useState } from 'react';
 import GameIcon from '@/components/ui/GameIcon';
 
 interface NetworkLostScreenProps {
@@ -15,42 +16,52 @@ export default function NetworkLostScreen({
   onReturnToGarden,
   onRetry,
 }: NetworkLostScreenProps) {
+  const [retryCount, setRetryCount] = useState(0);
+  
+  useEffect(() => {
+    if (isReconnecting) {
+      setRetryCount(c => c + 1);
+    }
+  }, [isReconnecting]);
+
   // When connected, don't render anything
-  // The parent component should conditionally render this component
-  // based on socket connection state
   if (!isReconnecting && serverAvailable) return null;
 
   const isServerUnavailable = !serverAvailable;
+  const showRetry = !isReconnecting;
 
   return (
     <div className="netlost-screen">
-      <div className="netlost-icon">
-        <GameIcon name="shield" className="netlost-icon-svg" />
+      <div className={`netlost-icon ${isReconnecting ? 'spinning' : ''}`}>
+        <GameIcon name={isReconnecting ? 'refresh' : isServerUnavailable ? 'alert' : 'wifiOff'} className="netlost-icon-svg" />
       </div>
       <div className="netlost-title">
         {isReconnecting 
           ? 'Reconnecting...' 
           : isServerUnavailable 
-            ? 'Offline (Server Unavailable)'
+            ? 'Server Unavailable'
             : 'Connection Lost'}
       </div>
       <div className="netlost-text">
         {isReconnecting
-          ? 'Attempting to restore connection to the server...'
+          ? `Attempting to connect... (attempt ${retryCount})`
           : isServerUnavailable
-            ? 'The game server is currently unavailable. You can still play Story or Arcade mode offline.'
-            : 'Your connection to the server has been lost.'}
+            ? 'The game server is currently unavailable. Please try again later.'
+            : 'Your connection to the server has been lost. Please check your internet connection.'}
       </div>
-      {!isReconnecting && (
+      {showRetry && (
         <div className="netlost-actions">
-          {isServerUnavailable && (
-            <button className="zen-btn" onClick={onRetry}>
-              Try Again
-            </button>
-          )}
-          <button className="zen-btn zen-btn-secondary" onClick={onReturnToGarden}>
-            Return to Garden
+          <button className="zen-btn" onClick={onRetry}>
+            {isServerUnavailable ? 'Check Again' : 'Reconnect'}
           </button>
+          <button className="zen-btn zen-btn-secondary" onClick={onReturnToGarden}>
+            Continue Offline
+          </button>
+        </div>
+      )}
+      {isReconnecting && (
+        <div className="netlost-auto-retry">
+          Will automatically retry...
         </div>
       )}
     </div>

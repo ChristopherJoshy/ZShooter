@@ -18,11 +18,20 @@ export function dist(x1: number, y1: number, x2: number, y2: number): number {
 }
 
 // Convert a hex color + alpha into an rgba() string.
+// The RGB parse result is cached so repeated calls with the same hex string
+// skip the parseInt work on every subsequent invocation.
+const _h2rCache = new Map<string, [number, number, number]>();
 export function h2r(hex: string, a: number): string {
-  const r = parseInt(hex.slice(1, 3), 16);
-  const g = parseInt(hex.slice(3, 5), 16);
-  const b = parseInt(hex.slice(5, 7), 16);
-  return `rgba(${r},${g},${b},${a})`;
+  let rgb = _h2rCache.get(hex);
+  if (!rgb) {
+    rgb = [
+      parseInt(hex.slice(1, 3), 16),
+      parseInt(hex.slice(3, 5), 16),
+      parseInt(hex.slice(5, 7), 16),
+    ];
+    _h2rCache.set(hex, rgb);
+  }
+  return `rgba(${rgb[0]},${rgb[1]},${rgb[2]},${a})`;
 }
 
 // Draw a radial glow centered at (x, y) with radius r.

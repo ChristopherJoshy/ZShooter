@@ -164,13 +164,15 @@ export function useSocket(userId: string | null, username: string | null) {
         return;
       }
 
-      const apiUrl = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000';
+      const isDev = process.env.NODE_ENV === 'development';
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL ?? (isDev ? 'http://localhost:4000' : 'https://zshooter.onrender.com');
 
       const socket = io(apiUrl, {
         auth: { token },
         transports: ['websocket', 'polling'],
-        reconnectionAttempts: 10,
-        reconnectionDelay: 2000,
+        reconnectionAttempts: 15,
+        reconnectionDelay: 1000,
+        reconnectionDelayMax: 5000,
       });
 
       socketRef.current = socket;
@@ -185,7 +187,7 @@ export function useSocket(userId: string | null, username: string | null) {
 
       socket.on('disconnect', () => {
         if (cancelled) return;
-        setState((s) => ({ ...s, connected: false }));
+        setState((s) => ({ ...s, connected: false, reconnecting: true }));
         // Reset matchmaking on disconnect
         setMmState(INITIAL_MM_STATE);
       });

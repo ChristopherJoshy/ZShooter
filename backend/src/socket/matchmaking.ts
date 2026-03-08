@@ -26,14 +26,14 @@ import type { LobbyPlayer, BotSlot } from '../types/index.js';
 
 // ── Constants ────────────────────────────────────────────
 const REGION_DEFAULT   = 'global';
-const MMR_RANGE_INIT   = 150;   // initial ±MMR window
-const MMR_RANGE_WIDE   = 400;   // expanded after 30 s
-const EXPAND_AFTER_MS  = 30_000;
-const BOT_FILL_AFTER_MS = 60_000;
+const MMR_RANGE_INIT   = 200;   // wider initial ±MMR window for faster matches
+const MMR_RANGE_WIDE   = 500;   // expanded after 5s
+const EXPAND_AFTER_MS  = 5_000;  // expand range after 5 seconds
+const BOT_FILL_AFTER_MS = 10_000; // fill with bots after 10 seconds
 const MATCH_SIZE       = 4;     // max players per lobby
-const MATCH_MIN        = 2;     // minimum real players to start
+const MATCH_MIN        = 1;     // allow single player with bots
 const COUNTDOWN_SEC    = 5;
-const POLL_INTERVAL_MS = 2_000;
+const POLL_INTERVAL_MS = 1_000; // poll more frequently
 
 // Bot name pool
 const BOT_NAMES = [
@@ -101,14 +101,40 @@ async function formLobby(
   const bots: BotSlot[] = [];
   if (fillWithBots) {
     const botsNeeded = MATCH_SIZE - players.length;
+    
+    // Determine bot tier based on average player MMR
+    const avgMmr = players.length > 0
+      ? players.reduce((sum, p) => sum + p.mmr, 0) / players.length
+      : 1000;
+    
+    let tier: BotSlot['tier'];
+    if (avgMmr < 900) {
+      tier = 'easy';
+    } else if (avgMmr <= 1200) {
+      tier = 'medium';
+    } else {
+      tier = 'hard';
+    }
+    
+    // Mix of bot tiers for variety when multiple bots needed
+    const tiers: BotSlot['tier'][] = botsNeeded > 1 
+      ? [tier, tier === 'easy' ? 'medium' : tier === 'medium' ? 'hard' : 'easy']
+      : [tier];
+    
     for (let i = 0; i < botsNeeded; i++) {
-      const tier = players.length <= 1 ? 'easy' : 'medium';
-      bots.push(makeBotSlot(tier));
+      bots.push(makeBotSlot(tiers[i % tiers.length] ?? tier));
     }
   }
 
-  // Persist lobby state in Redis (if available)
-  const lobbyState = { lobbyId, matchId, players, bots, countdownSeconds: null as number | null };
+  // Calculate RP bonus based on number of real players
+  const realPlayerCount = players.length;
+  let rpBonus = 0;
+  if (realPlayerCount === 1) rpBonus = 20;
+  else if (realPlayerCount === 2) rpBonus = 10;
+  else if (realPlayerCount === 3) rpBonus = 5;
+
+  // in Redis (if Persist lobby state available)
+  const lobbyState = { lobbyId, matchId, players, bots, countdownSeconds: null as number | null, rpBonus };
   if (redis) {
     redis
       .setex(lobbyKey(lobbyId), TTL.LOBBY, JSON.stringify(lobbyState))
@@ -235,15 +261,15 @@ function startPoll(
       })
       .filter((e): e is QueueEntry => e !== null);
 
-    if (matchable.length >= MATCH_MIN - 1) {
-      // We have enough real players (including self)
+    if (matchable.length >= 1) {
+      // We have at least one other player - form lobby with real players
       const group = [entry, ...matchable].slice(0, MATCH_SIZE);
       await formLobby(io, redis, group, false);
       return;
     }
 
     if (botFill) {
-      // Fill with bots after 60 s
+      // Fill with bots after BOT_FILL_AFTER_MS
       await formLobby(io, redis, [entry], true);
     }
   }, POLL_INTERVAL_MS);

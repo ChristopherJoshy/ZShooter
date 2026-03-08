@@ -8,6 +8,14 @@ import type { RankTier, RankDivision } from '../types/index.js';
 // Match result routes — RP / MMR delta after a ranked match
 // ══════════════════════════════════════════════════════════
 
+// ── Anti-cheat configuration ───────────────────────────────
+// Server-side validation thresholds to detect impossible scores
+// These limits are intentionally conservative to catch obvious cheating
+const MAX_SCORE_PER_WAVE = 50000;     // Max achievable score per wave
+const MAX_KILLS_PER_WAVE = 200;       // Max kills per wave (reasonable for end-game)
+const MIN_DURATION_PER_WAVE = 10;     // Minimum 10 seconds per wave
+const MAX_DURATION_PER_WAVE = 300;    // Maximum 5 minutes per wave
+
 const resultSchema = z.object({
   placement:    z.number().int().min(1).max(10),
   score:        z.number().int().min(0),
@@ -66,7 +74,38 @@ export default async function matchRoutes(fastify: FastifyInstance) {
     if (!parsed.success) {
       return reply.status(400).send({ error: parsed.error.issues[0].message });
     }
-    const { placement, kills, wavesReached, durationMs } = parsed.data;
+
+    // ── Anti-cheat validation ─────────────────────────────────
+    // Server is the source of truth: validate submitted match results
+    // Reject impossible scores that couldn't be achieved legitimately
+    const { placement, score, kills, wavesReached, durationMs } = parsed.data;
+
+    // Check for suspicious scores (exceeds per-wave maximum)
+    if (score > wavesReached * MAX_SCORE_PER_WAVE) {
+      fastify.log.warn({ userId: request.userId, score, wavesReached }, 'Suspicious score detected');
+      return reply.status(400).send({ error: 'Suspicious score detected' });
+    }
+
+    // Check for suspicious kill counts (exceeds per-wave maximum)
+    if (kills > wavesReached * MAX_KILLS_PER_WAVE) {
+      fastify.log.warn({ userId: request.userId, kills, wavesReached }, 'Suspicious kill count detected');
+      return reply.status(400).send({ error: 'Suspicious kill count detected' });
+    }
+
+    // Check duration is plausible (not too short to reach wave)
+    const expectedMinDuration = wavesReached * MIN_DURATION_PER_WAVE;
+    if (durationMs < expectedMinDuration * 1000) {
+      fastify.log.warn({ userId: request.userId, durationMs, wavesReached }, 'Match too short');
+      return reply.status(400).send({ error: 'Match too short' });
+    }
+
+    // Check duration isn't unreasonably long (could indicate manipulation)
+    const expectedMaxDuration = wavesReached * MAX_DURATION_PER_WAVE;
+    if (durationMs > expectedMaxDuration * 1000) {
+      fastify.log.warn({ userId: request.userId, durationMs, wavesReached }, 'Match duration exceeds maximum');
+      return reply.status(400).send({ error: 'Match duration exceeds reasonable limit' });
+    }
+
     const userId = request.userId;
 
     const user = await User.findById(userId);

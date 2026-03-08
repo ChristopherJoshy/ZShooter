@@ -6,13 +6,14 @@ import GameCanvas from '@/components/game/GameCanvas';
 import ResultsScreen from '@/components/game/ResultsScreen';
 import NetworkLostScreen from '@/components/game/NetworkLostScreen';
 import GameHub from '@/components/game/GameHub';
-import { useGameScale } from '@/hooks/useGameScale';
+import { useGameScale, detectMobile } from '@/hooks/useGameScale';
 import { useSocket } from '@/hooks/useSocket';
 import type { UserProfile } from '@/lib/api';
 import type { GameSave, WeaponId } from '@/lib/game/types';
 import { normalizeProfileToSave } from '@/lib/profile';
 import { readSessionCache, writeSessionCache } from '@/lib/sessionCache';
 import { apiGetMe } from '@/lib/api';
+import LoadingScreen from '@/components/game/LoadingScreen';
 
 // Inner component — has access to GameContext.
 function GameInner({ username, userId }: { username: string; userId: string }) {
@@ -22,7 +23,7 @@ function GameInner({ username, userId }: { username: string; userId: string }) {
     lastResult, lastRankedResult, setLastRankedResult,
     gameMode, setGameMode,
   } = useGame();
-  const { isTouch } = useGameScale();
+  const { isTouch, isMobile } = useGameScale();
   const { socketState, matchmakingState, queueForMatch, cancelMatch, onLobbyStart, retryConnection } = useSocket(userId, username);
 
   // When lobby:start fires, transition into ranked playing mode
@@ -118,7 +119,11 @@ function GameInner({ username, userId }: { username: string; userId: string }) {
   }, [setGameState, setLastRankedResult, setGameMode]);
 
   const handleLogout = useCallback(async () => {
+    // Clear session cache first (localStorage)
+    await import('@/lib/sessionCache').then(({ clearSessionCache }) => clearSessionCache());
+    // Then logout from backend (clears cookie)
     await import('@/lib/api').then(({ apiLogout }) => apiLogout());
+    // Redirect to auth page
     window.location.href = '/';
   }, []);
 
@@ -131,8 +136,14 @@ function GameInner({ username, userId }: { username: string; userId: string }) {
 
   return (
     <div id="app-wrap">
+      {/* Portrait rotate overlay — shown via CSS media query on mobile portrait */}
+      <div className="mob-rotate-overlay">
+        <div className="mob-rotate-icon">⟳</div>
+        <div className="mob-rotate-text">Rotate your device</div>
+        <div className="mob-rotate-sub">Landscape mode required</div>
+      </div>
       <div id="app">
-        <GameCanvas isTouch={isTouch} onReturn={handleReturn} opponentNames={opponentNames} />
+        <GameCanvas isTouch={isTouch} isMobile={isMobile} onReturn={handleReturn} opponentNames={opponentNames} />
       </div>
       <GameHub
         visible={gameState === 'garden'}
@@ -184,6 +195,12 @@ interface GamePageClientProps {
 export default function GamePageClient({ profile }: GamePageClientProps) {
   const [resolvedProfile, setResolvedProfile] = useState<UserProfile | null>(profile);
   const [networkLost, setNetworkLost] = useState(false);
+  const [loadingTimedOut, setLoadingTimedOut] = useState(false);
+  const isMobile = detectMobile();
+
+  const handleLoadingTimeout = useCallback(() => {
+    setLoadingTimedOut(true);
+  }, []);
 
   // If the server could not fetch the profile (Render cold start / network
   // blip), attempt to recover client-side using the localStorage session cache
@@ -220,9 +237,55 @@ export default function GamePageClient({ profile }: GamePageClientProps) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  if (resolvedProfile === null && !networkLost) {
-    // Still waiting for background fetch — render nothing (brief flash).
-    return null;
+  if (resolvedProfile === null && !networkLost && !loadingTimedOut) {
+    // Still waiting for background fetch — show loading screen
+    return <LoadingScreen isMobile={isMobile} onTimeout={handleLoadingTimeout} />;
+  }
+
+  // If timed out but we have cached credentials, allow local-only mode
+  if (loadingTimedOut && resolvedProfile === null) {
+    const cache = readSessionCache();
+    if (cache) {
+      // Proceed with local-only mode using cached credentials
+      const localOnlyProfile: UserProfile = {
+        userId: cache.userId,
+        username: cache.username,
+        seeds: 0,
+        highScore: 0,
+        totalRuns: 0,
+        highestWave: 0,
+        weapons: ['seedShot'],
+        abilities: [],
+        activeWeapon: 'seedShot',
+        activeAbility: 'none',
+        up: {
+          vitalRoots: 0,
+          forestMend: 0,
+          ironBark: 0,
+          petalEdge: 0,
+          rapidBloom: 0,
+          deepQuiver: 0,
+          swiftLoad: 0,
+          windStep: 0,
+          gustMaster: 0,
+          petalGuard: 0,
+        },
+        runHistory: [],
+        stats: {
+          totalKills: 0,
+          totalSeeds: 0,
+          totalWaves: 0,
+          highestCombo: 0,
+          totalPlayTime: 0,
+        },
+      };
+      const initialSave = normalizeProfileToSave(localOnlyProfile);
+      return (
+        <GameProvider initialSave={initialSave} initialUsername={localOnlyProfile.username}>
+          <GameInner username={localOnlyProfile.username} userId={localOnlyProfile.userId} />
+        </GameProvider>
+      );
+    }
   }
 
   if (networkLost || resolvedProfile === null) {

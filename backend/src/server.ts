@@ -18,7 +18,14 @@ import matchRoutes from './routes/match.js';
 import { initSocket } from './socket/index.js';
 
 const PORT = Number(process.env.PORT ?? 3001);
-const FRONTEND_URL = process.env.FRONTEND_URL ?? 'http://localhost:3000';
+// FRONTEND_URL may be a comma-separated list of allowed origins (e.g. prod URL
+// + local LAN IP for mobile dev testing).  Split into an array so @fastify/cors
+// accepts each entry individually rather than treating the whole string as one
+// origin (which would never match and silently break credentials).
+const FRONTEND_URLS = (process.env.FRONTEND_URL ?? 'http://localhost:3000')
+  .split(',')
+  .map((u) => u.trim())
+  .filter(Boolean);
 
 const fastify = Fastify({
   logger: {
@@ -43,9 +50,10 @@ async function bootstrap() {
   });
 
   await fastify.register(cors, {
-    // Only allow the configured frontend origin — never reflect arbitrary origins.
+    // Only allow the configured frontend origins — never reflect arbitrary origins.
     // Set FRONTEND_URL=https://z-shooter.vercel.app on Render in production.
-    origin: FRONTEND_URL,
+    // Multiple origins (comma-separated in env) are supported for LAN dev testing.
+    origin: FRONTEND_URLS,
     credentials: true,
     methods: ['GET', 'POST', 'PATCH', 'OPTIONS'],
   });

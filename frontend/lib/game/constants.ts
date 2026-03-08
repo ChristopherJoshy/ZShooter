@@ -109,6 +109,29 @@ export const PAL = {
     rootCannon:   '#8a7060',
     multiShoot:   '#c4a030',
   },
+  neon: {
+    player: '#00ff88',
+    enemy: '#ff3366',
+    bullet: '#00ccff',
+    combo: '#ffaa00',
+  },
+  trail: {
+    seedShot: 'rgba(122, 171, 138, 0.5)',
+    petalSpray: 'rgba(232, 144, 144, 0.5)',
+    lotusBeam: 'rgba(144, 112, 196, 0.7)',
+  },
+  burst: {
+    kill: ['#ffaa00', '#ff6600', '#ffcc00'],
+    levelup: ['#00ff88', '#00ccff', '#ff00ff'],
+    combo: ['#ff3366', '#ffaa00', '#00ff88'],
+  },
+  spark: {
+    yellow: '#ffdd00',
+    orange: '#ff8800',
+    white: '#ffffff',
+    cyan: '#00ffff',
+    pink: '#ff66aa',
+  },
 } as const;
 
 export const SAVE_KEY = 'zenflow_v4';

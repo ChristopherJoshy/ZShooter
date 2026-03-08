@@ -2,6 +2,7 @@
 import { useEffect, useMemo, useState, useRef, useCallback } from 'react';
 import GameIcon from '@/components/ui/GameIcon';
 import { useGame } from '@/context/GameContext';
+import MatchmakingAnimation from '@/components/game/MatchmakingAnimation';
 import {
   apiFriendAccept,
   apiFriendDecline,
@@ -72,6 +73,15 @@ function updateToggle<K extends keyof PlayerSettings>(
   setSettings({ ...settings, [key]: !settings[key] });
 }
 
+function tryLockLandscape() {
+  try {
+    const orientation = (screen as Screen & { orientation?: { lock?: (o: string) => Promise<void> } }).orientation;
+    if (orientation?.lock) {
+      orientation.lock('landscape').catch(() => null);
+    }
+  } catch { /* not supported */ }
+}
+
 export default function GameHub({
   visible,
   save,
@@ -95,12 +105,42 @@ export default function GameHub({
   const [showModePicker, setShowModePicker] = useState(false);
   const [leaderboardScope, setLeaderboardScope] = useState<'ranked' | 'score' | 'wave'>('ranked');
   const [leaderboardEntries, setLeaderboardEntries] = useState<LeaderboardEntry[]>([]);
+  const [leaderboardOffset, setLeaderboardOffset] = useState(0);
+  const [leaderboardLoading, setLeaderboardLoading] = useState(false);
   const [myRank, setMyRank] = useState<LeaderboardEntry | null>(null);
   const [friends, setFriends] = useState<FriendEntry[]>([]);
   const [requestsIn, setRequestsIn] = useState<FriendRequestEntry[]>([]);
   const [requestsOut, setRequestsOut] = useState<FriendRequestEntry[]>([]);
   const [friendName, setFriendName] = useState('');
   const [feedback, setFeedback] = useState<string | null>(null);
+  const [railOpen, setRailOpen] = useState(false);
+  const LEADERBOARD_LIMIT = 8;
+
+  const myRankInView = myRank && myRank.rank >= leaderboardOffset + 1 && myRank.rank <= leaderboardOffset + LEADERBOARD_LIMIT;
+
+  useEffect(() => {
+    if (!visible) return;
+    setLeaderboardOffset(0);
+    setLeaderboardEntries([]);
+    setMyRank(null);
+    setLeaderboardLoading(true);
+    Promise.all([
+      apiGetLeaderboard({ scope: leaderboardScope, limit: LEADERBOARD_LIMIT, offset: 0 }),
+      apiGetMyRank(leaderboardScope),
+    ]).then(([entries, rank]) => {
+      setLeaderboardEntries(entries);
+      setMyRank(rank);
+    }).catch(() => null).finally(() => setLeaderboardLoading(false));
+  }, [leaderboardScope, visible]);
+
+  useEffect(() => {
+    if (!visible) return;
+    setLeaderboardLoading(true);
+    apiGetLeaderboard({ scope: leaderboardScope, limit: LEADERBOARD_LIMIT, offset: leaderboardOffset })
+      .then(setLeaderboardEntries)
+      .catch(() => null)
+      .finally(() => setLeaderboardLoading(false));
+  }, [leaderboardScope, visible, leaderboardOffset]);
 
   const rankName = prettifyRank(save.ranked.tier, save.ranked.division);
   const progress = save.ranked.tier === 'garden-master' ? 100 : Math.round((save.ranked.rp % 300) / 3);
@@ -109,12 +149,6 @@ export default function GameHub({
   const activeWeapon = useMemo(() => WEAPON_DEFS.find((item) => item.id === save.activeWeapon) ?? WEAPON_DEFS[0], [save.activeWeapon]);
   const activeAbility = useMemo(() => ABILITY_DEFS.find((item) => item.id === save.activeAbility) ?? ABILITY_DEFS[0], [save.activeAbility]);
   const onlineFriends = friends.filter((friend) => (socketState.presenceMap[friend.userId] ?? friend.status) !== 'offline');
-
-  useEffect(() => {
-    if (!visible) return;
-    apiGetLeaderboard({ scope: leaderboardScope, limit: 8, offset: 0 }).then(setLeaderboardEntries).catch(() => null);
-    apiGetMyRank(leaderboardScope).then(setMyRank).catch(() => null);
-  }, [leaderboardScope, visible]);
 
   useEffect(() => {
     if (!visible) return;
@@ -154,7 +188,7 @@ export default function GameHub({
     <div className={'hub-shell' + (visible ? '' : ' hidden') + ' rail-collapsed'}>
 
       {/* ── Sidebar rail ─────────────────────────────────────────────── */}
-      <aside className="hub-rail collapsed">
+      <aside className={"hub-rail collapsed" + (railOpen ? " open" : "")}>
         <div className="hub-brand">
           <img src="/zshooter-logo.png" alt="ZShooter" className="hub-brand-mark-img" />
           <span className="hub-brand-title">ZShooter</span>
@@ -169,6 +203,7 @@ export default function GameHub({
               onClick={() => {
                 sfx('menuClick');
                 setView(item.id);
+                setRailOpen(false);
               }}
               onMouseEnter={() => sfx('menuHover')}
             >
@@ -208,15 +243,29 @@ export default function GameHub({
           </div>
         </div>
 
-        <button className="hub-logout" onClick={() => { onLogout(); }}>
+        <button className="hub-logout" onClick={() => { setRailOpen(false); onLogout(); }}>
           <GameIcon name="logout" className="hub-nav-icon" />
           <span className="hub-nav-label">Log out</span>
         </button>
 
       </aside>
 
+      {/* ── Mobile rail scrim ────────────────────────────────────────── */}
+      {railOpen && (
+        <div className="hub-rail-scrim" onClick={() => setRailOpen(false)} />
+      )}
+
       {/* ── Main content ─────────────────────────────────────────────── */}
       <main className="hub-main">
+
+        {/* ── Mobile hamburger ─────────────────────────────────────────── */}
+        <button
+          className="hub-hamburger"
+          aria-label="Open navigation"
+          onClick={() => setRailOpen(true)}
+        >
+          <span /><span /><span />
+        </button>
 
         {/* ── Dashboard / Play ──────────────────────────────────────── */}
         {view === 'dashboard' && (
@@ -493,47 +542,13 @@ export default function GameHub({
                     </div>
                   </button>
                 )}
-                {matchmakingState.status === 'queuing' && matchmakingState.waiting && (
-                  <div className="hub-queue-state">
-                    <div className="hub-spinner" />
-                    <strong>Searching...</strong>
-                    <div className="hub-queue-meta">
-                      <span>Position #{matchmakingState.waiting.position}</span>
-                      <span className="hub-dot-sep">·</span>
-                      <span>~{matchmakingState.waiting.estimatedWaitSeconds}s</span>
-                    </div>
-                    {matchmakingState.waiting.expandedRange && (
-                      <div className="hub-queue-expanded">Skill range expanded</div>
-                    )}
-                    <button className="hub-inline-btn danger" onClick={onMatchmakingCancel}>Cancel</button>
-                  </div>
-                )}
-                {matchmakingState.status === 'found' && matchmakingState.lobby && (
-                  <div className="hub-lobby">
-                    <div className="hub-lobby-header">
-                      <strong>Match Found!</strong>
-                      {matchmakingState.lobby.countdownSeconds !== null && (
-                        <div className="hub-lobby-timer">{matchmakingState.lobby.countdownSeconds}</div>
-                      )}
-                    </div>
-                    
-                    <div className="hub-lobby-list">
-                      {matchmakingState.lobby.players.map((player) => (
-                        <div key={player.userId} className="hub-lobby-row player">
-                          <GameIcon name="ranked" className="hub-lobby-icon" />
-                          <span className="hub-lobby-name">{player.username}</span>
-                          <strong className="hub-lobby-mmr">{player.mmr} MMR</strong>
-                        </div>
-                      ))}
-                      {matchmakingState.lobby.bots.map((bot) => (
-                        <div key={bot.botId} className="hub-lobby-row bot">
-                          <GameIcon name="check" className="hub-lobby-icon" />
-                          <span className="hub-lobby-name">{bot.name}</span>
-                          <strong className="hub-lobby-mmr">{bot.mmr} MMR</strong>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
+                {(matchmakingState.status === 'queuing' || matchmakingState.status === 'found') && (
+                  <MatchmakingAnimation
+                    status={matchmakingState.status}
+                    waiting={matchmakingState.waiting}
+                    lobby={matchmakingState.lobby}
+                    onCancel={onMatchmakingCancel}
+                  />
                 )}
               </article>
             </div>
@@ -551,29 +566,56 @@ export default function GameHub({
                 <button
                   key={scope}
                   className={'hub-switch-btn' + (leaderboardScope === scope ? ' active' : '')}
-                  onClick={() => setLeaderboardScope(scope)}
+                  onClick={() => { sfx('menuClick'); setLeaderboardScope(scope); }}
                 >
                   {scope === 'ranked' ? 'Ranked' : scope === 'score' ? 'All-time score' : 'Highest wave'}
                 </button>
               ))}
             </div>
             <div className="hub-card">
-              {myRank && (
+              {leaderboardLoading && (
+                <div className="hub-leaderboard-loading">Loading...</div>
+              )}
+              {!leaderboardLoading && myRank && !myRankInView && (
                 <div className="hub-leaderboard-self">
                   <span>#{myRank.rank}</span>
-                  <span>{username}</span>
+                  <span>{username} (You)</span>
                   <span>{leaderboardScope === 'ranked' ? prettifyRank(myRank.tier ?? 'seedling', myRank.division) : leaderboardScope === 'wave' ? `Wave ${myRank.highestWave ?? 0}` : myRank.highScore}</span>
-                  <span>{leaderboardScope === 'ranked' ? `${myRank.rp ?? 0} RP` : leaderboardScope === 'wave' ? myRank.totalRuns : myRank.totalRuns}</span>
+                  <span>{leaderboardScope === 'ranked' ? `${myRank.rp ?? 0} RP` : `${myRank.totalRuns} runs`}</span>
                 </div>
               )}
-              {leaderboardEntries.map((entry) => (
+              {!leaderboardLoading && leaderboardEntries.length === 0 && (
+                <div className="hub-empty-copy">No entries yet.</div>
+              )}
+              {!leaderboardLoading && leaderboardEntries.map((entry) => (
                 <div key={entry.userId} className={'hub-leaderboard-row' + (entry.userId === userId ? ' self' : '')}>
                   <span>#{entry.rank}</span>
                   <span>{entry.username}</span>
                   <span>{leaderboardScope === 'ranked' ? prettifyRank(entry.tier ?? 'seedling', entry.division) : leaderboardScope === 'wave' ? `Wave ${entry.highestWave ?? 0}` : entry.highScore}</span>
-                  <span>{leaderboardScope === 'ranked' ? `${entry.rp ?? 0} RP` : entry.totalRuns}</span>
+                  <span>{leaderboardScope === 'ranked' ? `${entry.rp ?? 0} RP` : `${entry.totalRuns} runs`}</span>
                 </div>
               ))}
+              {!leaderboardLoading && leaderboardEntries.length > 0 && (
+                <div className="hub-leaderboard-pagination">
+                  <button
+                    className="hub-inline-btn"
+                    disabled={leaderboardOffset === 0}
+                    onClick={() => { sfx('menuClick'); setLeaderboardOffset((o) => Math.max(0, o - LEADERBOARD_LIMIT)); }}
+                  >
+                    Previous
+                  </button>
+                  <span className="hub-leaderboard-page-info">
+                    {leaderboardOffset + 1}-{leaderboardOffset + leaderboardEntries.length}
+                  </span>
+                  <button
+                    className="hub-inline-btn"
+                    disabled={leaderboardEntries.length < LEADERBOARD_LIMIT}
+                    onClick={() => { sfx('menuClick'); setLeaderboardOffset((o) => o + LEADERBOARD_LIMIT); }}
+                  >
+                    Next
+                  </button>
+                </div>
+              )}
             </div>
           </section>
         )}
@@ -720,26 +762,57 @@ export default function GameHub({
       {showModePicker && (
         <div className="hub-mode-backdrop" onClick={() => setShowModePicker(false)}>
           <div className="hub-mode-modal" onClick={(e) => e.stopPropagation()}>
-            <div className="hub-mode-title">Select Mode</div>
-            <div className="hub-mode-cards">
-              <button
-                className="hub-mode-card"
-                onClick={() => { setShowModePicker(false); onPlayArcade(); }}
-              >
-                <GameIcon name="play" className="hub-mode-card-icon" />
-                <div className="hub-mode-card-title">Arcade</div>
-                <div className="hub-mode-card-desc">Jump straight in. No stakes, pure action.</div>
-              </button>
-              <button
-                className="hub-mode-card"
-                onClick={() => { setShowModePicker(false); onMatchmakingQueue(); setView('ranked'); }}
-              >
-                <GameIcon name="ranked" className="hub-mode-card-icon" />
-                <div className="hub-mode-card-title">Ranked</div>
-                <div className="hub-mode-card-desc">Queue for a competitive placement match.</div>
-              </button>
+            <div className="hub-mode-header">
+              <div className="hub-mode-title">Choose Your Path</div>
+              <div className="hub-mode-subtitle">Select a game mode to begin</div>
             </div>
-            <button className="hub-mode-close" onClick={() => setShowModePicker(false)}>Cancel</button>
+            <div className="hub-mode-cards">
+
+              {/* Arcade Mode */}
+              <button
+                className="hub-mode-card mode-arcade"
+                onClick={() => { setShowModePicker(false); tryLockLandscape(); onPlayArcade(); }}
+              >
+                <div className="hub-mode-card-art arcade">
+                  <GameIcon name="play" className="hub-mode-card-art-icon" />
+                </div>
+                <div className="hub-mode-card-body">
+                  <div className="hub-mode-card-title">Arcade</div>
+                  <div className="hub-mode-card-desc">Pure action. No stakes. Just you against endless waves.</div>
+                  <div className="hub-mode-card-meta">
+                    <span>Score attack</span>
+                    <span>Quick play</span>
+                  </div>
+                </div>
+              </button>
+
+              {/* Ranked Mode */}
+              <button
+                className="hub-mode-card mode-ranked"
+                onClick={() => {
+                  setShowModePicker(false);
+                  tryLockLandscape();
+                  onMatchmakingQueue();
+                  setView('ranked');
+                }}
+              >
+                <div className="hub-mode-card-art ranked">
+                  <GameIcon name="ranked" className="hub-mode-card-art-icon" />
+                </div>
+                <div className="hub-mode-card-body">
+                  <div className="hub-mode-card-title">Ranked</div>
+                  <div className="hub-mode-card-desc">Compete for rank. Climb the ladder. Prove your skill.</div>
+                  <div className="hub-mode-card-meta">
+                    <span>RP rewards</span>
+                    <span>PvP</span>
+                  </div>
+                </div>
+              </button>
+
+            </div>
+            <button className="hub-mode-close" onClick={() => setShowModePicker(false)}>
+              Cancel
+            </button>
           </div>
         </div>
       )}

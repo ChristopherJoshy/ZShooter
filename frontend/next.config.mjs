@@ -1,14 +1,27 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  // Strict mode enabled for better dev experience.
   reactStrictMode: true,
+  
+  // Enable SWC for faster builds
+  swcMinify: true,
+  
+  // Production optimizations
+  output: 'standalone',
+  
+  // Reduce logging in production
+  logLevel: 'error',
+  
+  // Module IDs
+  moduleIds: 'deterministic',
 
-  // Proxy all /api/* requests to the backend so the browser never talks cross-origin.
-  // This means the auth cookie is scoped to the frontend domain (Vercel), not the backend
-  // domain (Render), which allows Next.js server components to read it via cookies().
-  // API_URL env var overrides the hardcoded production URL for local dev.
+  // Proxy all /api/* requests to the backend
   async rewrites() {
-    const backendUrl = process.env.API_URL ?? 'https://zshooter.onrender.com';
+    // Detect environment
+    const isDev = process.env.NODE_ENV === 'development';
+    const backendUrl = isDev 
+      ? process.env.API_URL ?? 'http://localhost:4000'
+      : process.env.API_URL ?? 'https://zshooter.onrender.com';
+    
     return [
       {
         source: '/api/:path*',

@@ -4,29 +4,25 @@ import type { GameRunState } from '@/lib/game/types';
 import { W, H } from '@/lib/game/constants';
 import { startAudio } from '@/lib/game/audio';
 
-// Deadzone radius before joystick registers movement
 const DEADZONE = 12;
-// Max joystick knob displacement in px (visual only — direction is normalised)
 const KNOB_MAX = 48;
 
 interface TouchControlsProps {
   stateRef: React.RefObject<GameRunState | null>;
-  /** Only renders controls when visible (game is playing) */
   visible: boolean;
+  isMobile?: boolean;
 }
 
-export default function TouchControls({ stateRef, visible }: TouchControlsProps) {
+export default function TouchControls({ stateRef, visible, isMobile }: TouchControlsProps) {
   const joystickBaseRef = useRef<HTMLDivElement>(null);
   const joystickKnobRef = useRef<HTMLDivElement>(null);
   const fireZoneRef = useRef<HTMLDivElement>(null);
   const abilBtnRef = useRef<HTMLButtonElement>(null);
 
-  // Track active touch IDs so left/right zones don't steal each other's touches
   const joystickTouchId = useRef<number | null>(null);
   const joystickOrigin = useRef<{ x: number; y: number } | null>(null);
   const fireTouchId = useRef<number | null>(null);
 
-  // Joystick: inject WASD-equivalent keys + aim direction into state
   const applyJoystick = (dx: number, dy: number) => {
     const state = stateRef.current;
     if (!state) return;
@@ -70,19 +66,25 @@ export default function TouchControls({ stateRef, visible }: TouchControlsProps)
     const abilBtn = abilBtnRef.current;
     if (!joystickZone || !fireZone || !abilBtn) return;
 
-    // ── Joystick ────────────────────────────────────────────────────────────
-
     const onJoyStart = (e: TouchEvent) => {
       e.preventDefault();
       startAudio();
-      if (joystickTouchId.current !== null) return; // already tracking one finger
+      if (joystickTouchId.current !== null) return;
       const touch = e.changedTouches[0];
       joystickTouchId.current = touch.identifier;
       joystickOrigin.current = { x: touch.clientX, y: touch.clientY };
 
       const base = joystickBaseRef.current;
       if (base) {
-        base.style.left = touch.clientX + 'px';
+        const isLandscape = window.innerWidth > window.innerHeight;
+        const baseWidth = isMobile ? (isLandscape ? 110 : 120) : 96;
+        const maxX = window.innerWidth * 0.45;
+        const minX = 60;
+        const clampedX = Math.max(minX, Math.min(maxX, touch.clientX));
+        
+        base.style.width = baseWidth + 'px';
+        base.style.height = baseWidth + 'px';
+        base.style.left = clampedX + 'px';
         base.style.top = touch.clientY + 'px';
         base.style.opacity = '1';
       }
@@ -105,18 +107,18 @@ export default function TouchControls({ stateRef, visible }: TouchControlsProps)
       const dy = touch.clientY - joystickOrigin.current.y;
       applyJoystick(dx, dy);
 
-      // Update knob visual
       const knob = joystickKnobRef.current;
       if (knob) {
+        const isLandscapeMove = window.innerWidth > window.innerHeight;
+        const knobMax = isMobile ? (isLandscapeMove ? 50 : 60) : KNOB_MAX;
         const len = Math.sqrt(dx * dx + dy * dy);
-        const clampLen = Math.min(len, KNOB_MAX);
+        const clampLen = Math.min(len, knobMax);
         const angle = Math.atan2(dy, dx);
         const kx = Math.cos(angle) * clampLen;
         const ky = Math.sin(angle) * clampLen;
         knob.style.transform = `translate(calc(-50% + ${kx}px), calc(-50% + ${ky}px))`;
       }
 
-      // Also update aim: point mouseX/mouseY away from player center in joystick direction
       const state = stateRef.current;
       if (state) {
         const len2 = Math.sqrt(dx * dx + dy * dy);
@@ -142,8 +144,6 @@ export default function TouchControls({ stateRef, visible }: TouchControlsProps)
     joystickZone.addEventListener('touchend', onJoyEnd, { passive: false });
     joystickZone.addEventListener('touchcancel', onJoyEnd, { passive: false });
 
-    // ── Fire zone ───────────────────────────────────────────────────────────
-
     const onFireStart = (e: TouchEvent) => {
       e.preventDefault();
       startAudio();
@@ -153,12 +153,13 @@ export default function TouchControls({ stateRef, visible }: TouchControlsProps)
       const state = stateRef.current;
       if (state) {
         state.autoFire = true;
-        // Update aim to touch position mapped to canvas space
         const canvasEl = document.getElementById('gc') as HTMLCanvasElement | null;
         if (canvasEl) {
           const rect = canvasEl.getBoundingClientRect();
-          state.mouseX = touch.clientX - rect.left;
-          state.mouseY = touch.clientY - rect.top;
+          const scaleX = rect.width / W;
+          const scaleY = rect.height / H;
+          state.mouseX = (touch.clientX - rect.left) / scaleX;
+          state.mouseY = (touch.clientY - rect.top) / scaleY;
         }
       }
     };
@@ -179,8 +180,10 @@ export default function TouchControls({ stateRef, visible }: TouchControlsProps)
         const canvasEl = document.getElementById('gc') as HTMLCanvasElement | null;
         if (canvasEl) {
           const rect = canvasEl.getBoundingClientRect();
-          state.mouseX = touch.clientX - rect.left;
-          state.mouseY = touch.clientY - rect.top;
+          const scaleX = rect.width / W;
+          const scaleY = rect.height / H;
+          state.mouseX = (touch.clientX - rect.left) / scaleX;
+          state.mouseY = (touch.clientY - rect.top) / scaleY;
         }
       }
     };
@@ -201,8 +204,6 @@ export default function TouchControls({ stateRef, visible }: TouchControlsProps)
     fireZone.addEventListener('touchmove', onFireMove, { passive: false });
     fireZone.addEventListener('touchend', onFireEnd, { passive: false });
     fireZone.addEventListener('touchcancel', onFireEnd, { passive: false });
-
-    // ── Ability button ──────────────────────────────────────────────────────
 
     const onAbilTouch = (e: TouchEvent) => {
       e.preventDefault();
@@ -225,25 +226,22 @@ export default function TouchControls({ stateRef, visible }: TouchControlsProps)
       resetJoystick();
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [visible]);
+  }, [visible, isMobile]);
 
   if (!visible) return null;
 
+  const zoneClass = isMobile ? 'tc-zone tc-left tc-left-mobile' : 'tc-zone tc-left';
+  const fireZoneClass = isMobile ? 'tc-zone tc-right tc-right-mobile' : 'tc-zone tc-right';
+  const abilBtnClass = isMobile ? 'tc-abil-btn tc-abil-btn-mobile' : 'tc-abil-btn';
+
   return (
     <>
-      {/* Left half — joystick zone */}
-      <div id="tc-left" className="tc-zone tc-left" />
-
-      {/* Right half — fire zone */}
-      <div ref={fireZoneRef} className="tc-zone tc-right" />
-
-      {/* Ability button — bottom right corner */}
-      <button ref={abilBtnRef} className="tc-abil-btn" aria-label="Use ability">
+      <div id="tc-left" className={zoneClass} />
+      <div ref={fireZoneRef} className={fireZoneClass} />
+      <button ref={abilBtnRef} className={abilBtnClass} aria-label="Use ability">
         <span className="tc-abil-icon">✦</span>
         <span className="tc-abil-label">ABILITY</span>
       </button>
-
-      {/* Joystick visuals — absolutely positioned, repositioned on each touch start */}
       <div ref={joystickBaseRef} className="tc-joy-base">
         <div ref={joystickKnobRef} className="tc-joy-knob" />
       </div>

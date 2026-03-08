@@ -22,6 +22,7 @@ interface LeaderboardEntry {
   userId: string;
   username: string;
   highScore: number;
+  highestWave?: number;
   totalRuns: number;
   rp?: number;
   mmr?: number;
@@ -32,7 +33,7 @@ interface LeaderboardEntry {
 const querySchema = z.object({
   limit:  z.coerce.number().int().min(1).max(PAGE_SIZE_MAX).optional().default(PAGE_SIZE_DEFAULT),
   offset: z.coerce.number().int().min(0).optional().default(0),
-  scope:  z.enum(['ranked', 'score']).optional().default('ranked'),
+  scope:  z.enum(['ranked', 'score', 'wave']).optional().default('ranked'),
 });
 
 const submitSchema = z.object({
@@ -67,24 +68,27 @@ export default async function leaderboardRoutes(fastify: FastifyInstance) {
 
     const sort: Record<string, 1 | -1> = scope === 'ranked'
       ? { 'ranked.rp': -1, 'ranked.mmr': -1, highScore: -1 }
+      : scope === 'wave'
+      ? { 'stats.survival.highestWave': -1, highScore: -1 }
       : { highScore: -1 };
 
-    const users = await User.find({}, 'username highScore totalRuns ranked')
+    const users = await User.find({}, 'username highScore stats.survival.highestWave totalRuns ranked')
       .sort(sort)
       .skip(offset)
       .limit(limit)
       .lean();
 
     const entries: LeaderboardEntry[] = users.map((u, i) => ({
-      rank:      offset + i + 1,
-      userId:    String(u._id),
-      username:  u.username,
-      highScore: u.highScore,
-      totalRuns: u.totalRuns,
-      rp:        scope === 'ranked' ? (u.ranked?.rp ?? 0) : undefined,
-      mmr:       scope === 'ranked' ? (u.ranked?.mmr ?? 1000) : undefined,
-      tier:      scope === 'ranked' ? (u.ranked?.tier ?? 'seedling') : undefined,
-      division:  scope === 'ranked' ? (u.ranked?.division ?? 'III') : undefined,
+      rank:        offset + i + 1,
+      userId:      String(u._id),
+      username:    u.username,
+      highScore:   u.highScore,
+      highestWave: scope === 'wave' ? ((u.stats?.survival?.highestWave) ?? 0) : undefined,
+      totalRuns:   u.totalRuns,
+      rp:          scope === 'ranked' ? (u.ranked?.rp ?? 0) : undefined,
+      mmr:         scope === 'ranked' ? (u.ranked?.mmr ?? 1000) : undefined,
+      tier:        scope === 'ranked' ? (u.ranked?.tier ?? 'seedling') : undefined,
+      division:    scope === 'ranked' ? (u.ranked?.division ?? 'III') : undefined,
     }));
 
     if (useCache && fastify.redis) {
@@ -109,7 +113,7 @@ export default async function leaderboardRoutes(fastify: FastifyInstance) {
     }
     const { scope } = parsed.data;
 
-    const user = await User.findById(userId, 'username highScore totalRuns ranked').lean();
+    const user = await User.findById(userId, 'username highScore stats.survival.highestWave totalRuns ranked').lean();
     if (!user) return reply.status(404).send({ error: 'User not found' });
 
     const rank = scope === 'ranked'
@@ -122,6 +126,8 @@ export default async function leaderboardRoutes(fastify: FastifyInstance) {
             },
           ],
         }) + 1
+      : scope === 'wave'
+      ? await User.countDocuments({ 'stats.survival.highestWave': { $gt: (user.stats?.survival?.highestWave) ?? 0 } }) + 1
       : await User.countDocuments({ highScore: { $gt: user.highScore } }) + 1;
 
     return reply.send({
@@ -129,6 +135,7 @@ export default async function leaderboardRoutes(fastify: FastifyInstance) {
       userId: String(user._id),
       username: user.username,
       highScore: user.highScore,
+      highestWave: scope === 'wave' ? ((user.stats?.survival?.highestWave) ?? 0) : undefined,
       totalRuns: user.totalRuns,
       rp:       scope === 'ranked' ? (user.ranked?.rp ?? 0) : undefined,
       mmr:      scope === 'ranked' ? (user.ranked?.mmr ?? 1000) : undefined,

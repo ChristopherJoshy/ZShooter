@@ -4,16 +4,27 @@ import { User } from '../models/User.js';
 import { registerSchema, loginSchema } from '../schemas/auth.schema.js';
 import { COOKIE_NAME } from '../plugins/auth.js';
 
-const COOKIE_OPTS = {
+// Base cookie options — secure is determined per-request (see cookieOpts()).
+const BASE_COOKIE_OPTS = {
   httpOnly: true,
-  secure: process.env.NODE_ENV === 'production',
   // Always 'lax' — requests go through the Next.js proxy rewrite so they are
-  // same-origin from the browser's perspective. 'none' is only needed for
-  // direct cross-origin requests, which this project no longer uses.
+  // same-origin from the browser's perspective.
   sameSite: 'lax' as const,
   path: '/',
   maxAge: 60 * 60 * 24 * 7, // 7 days in seconds
 };
+
+// Derive the secure flag from the actual request rather than NODE_ENV.
+// This prevents the "non-HTTPS cookie can't be set as secure" browser error
+// when the backend is accessed over plain HTTP during LAN dev testing while
+// NODE_ENV happens to be 'production', or via a non-HTTPS proxy.
+function cookieOpts(request: { headers: Record<string, string | string[] | undefined> }) {
+  const proto = request.headers['x-forwarded-proto'];
+  const isHttps = Array.isArray(proto)
+    ? proto[0] === 'https'
+    : proto === 'https';
+  return { ...BASE_COOKIE_OPTS, secure: isHttps };
+}
 
 export default async function authRoutes(fastify: FastifyInstance) {
   // POST /auth/register
@@ -39,7 +50,7 @@ export default async function authRoutes(fastify: FastifyInstance) {
 
     const token = await fastify.signJwt({ userId: String(user._id), username: user.username });
     return reply
-      .setCookie(COOKIE_NAME, token, COOKIE_OPTS)
+      .setCookie(COOKIE_NAME, token, cookieOpts(request))
       .status(201)
       .send({ username: user.username });
   });
@@ -65,14 +76,14 @@ export default async function authRoutes(fastify: FastifyInstance) {
 
     const token = await fastify.signJwt({ userId: String(user._id), username: user.username });
     return reply
-      .setCookie(COOKIE_NAME, token, COOKIE_OPTS)
+      .setCookie(COOKIE_NAME, token, cookieOpts(request))
       .send({ username: user.username });
   });
 
   // POST /auth/logout
-  fastify.post('/auth/logout', async (_request, reply) => {
+  fastify.post('/auth/logout', async (request, reply) => {
     return reply
-      .clearCookie(COOKIE_NAME, COOKIE_OPTS)
+      .clearCookie(COOKIE_NAME, cookieOpts(request))
       .send({ ok: true });
   });
 

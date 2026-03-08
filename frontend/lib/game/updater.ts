@@ -11,12 +11,20 @@ type _Particle = Particle;
 type _SeedDrop = SeedDrop;
 
 // ── Shake ─────────────────────────────────────────────────────────────────────
-// Shake is disabled — these are kept as no-ops so call sites don't need changing.
 
-export function addShake(_state: GameRunState, _m: number): void { /* no-op */ }
+export function addShake(state: GameRunState, m: number): void {
+  state.shake.m = Math.min(state.shake.m + m, 18);
+}
 
 export function updShake(state: GameRunState): void {
-  state.shake.x = 0; state.shake.y = 0; state.shake.m = 0;
+  if (state.shake.m > 0) {
+    state.shake.x = (Math.random() - 0.5) * state.shake.m;
+    state.shake.y = (Math.random() - 0.5) * state.shake.m;
+    state.shake.m *= 0.88;
+    if (state.shake.m < 0.5) state.shake.m = 0;
+  } else {
+    state.shake.x = 0; state.shake.y = 0;
+  }
 }
 
 // ── Particles ─────────────────────────────────────────────────────────────────
@@ -45,6 +53,42 @@ export function spawnPetalBurst(state: GameRunState, x: number, y: number, n: nu
 
 export function spawnText(state: GameRunState, x: number, y: number, text: string, col: string = PAL.combo, sz = 11): void {
   state.particles.push({ text, x, y, vx: rnd(-0.6, 0.6), vy: -1.4, life: 60, maxLife: 60, col, isText: true, sz });
+}
+
+export function spawnSparkBurst(state: GameRunState, x: number, y: number, n: number, col: string): void {
+  for (let i = 0; i < n; i++) {
+    const a = rnd(0, Math.PI * 2);
+    const s = rnd(2, 6);
+    const sparkColors = [PAL.spark.yellow, PAL.spark.orange, PAL.spark.white, col];
+    state.particles.push({
+      x, y,
+      vx: Math.cos(a) * s,
+      vy: Math.sin(a) * s,
+      col: sparkColors[Math.floor(Math.random() * sparkColors.length)],
+      life: rnd(12, 22),
+      maxLife: 22,
+      sz: rnd(1, 2.5),
+    });
+  }
+}
+
+export function spawnComboBurst(state: GameRunState, x: number, y: number, combo: number): void {
+  const intensity = Math.min(combo, 8);
+  const n = 8 + intensity * 3;
+  const colors = PAL.burst.combo;
+  for (let i = 0; i < n; i++) {
+    const a = rnd(0, Math.PI * 2);
+    const s = rnd(3, 5 + intensity * 0.5);
+    state.particles.push({
+      x, y,
+      vx: Math.cos(a) * s,
+      vy: Math.sin(a) * s,
+      col: colors[Math.floor(Math.random() * colors.length)],
+      life: rnd(20, 35),
+      maxLife: 35,
+      sz: rnd(2, 3.5),
+    });
+  }
 }
 
 // ── Ability ───────────────────────────────────────────────────────────────────
@@ -238,33 +282,43 @@ function onKill(state: GameRunState, e: Enemy, idx: number): void {
   state.kills++;
   state.comboTimer = COMBO_DUR;
   spawnText(state, e.x, e.y - e.r - 8, '+' + pts, PAL.combo, 11);
+  
+  // Combo burst effect - more particles at higher combos
+  if (state.combo >= 2) {
+    spawnComboBurst(state, e.x, e.y, state.combo);
+  }
 
   // Per-enemy kill particles + sfx
   if (e.type === 'chaser') {
     spawnPetalBurst(state, e.x, e.y, 20, e.col);
     spawnParticles(state, e.x, e.y, 12, e.col, 4, 28, 2);
+    spawnSparkBurst(state, e.x, e.y, 8, e.col);
     sfx('dieChaser');
     addShake(state, 3);
   } else if (e.type === 'shooter') {
     spawnPetalBurst(state, e.x, e.y, 12, e.col);
     spawnParticles(state, e.x, e.y, 8, e.col, 2.5, 22, 2);
     spawnParticles(state, e.x, e.y, 8, e.col, 6, 14, 1.5); // bullet scatter
+    spawnSparkBurst(state, e.x, e.y, 6, e.col);
     sfx('dieShooter');
     addShake(state, 3);
   } else if (e.type === 'tank') {
     spawnPetalBurst(state, e.x, e.y, 6, e.col);
     spawnParticles(state, e.x, e.y, 22, e.col, 1.5, 40, 4.5); // heavy armored crumble
+    spawnSparkBurst(state, e.x, e.y, 12, e.col);
     sfx('dieTank');
     addShake(state, 6);
   } else if (e.type === 'speeder') {
     spawnPetalBurst(state, e.x, e.y, 28, e.col);
     spawnParticles(state, e.x, e.y, 16, e.col, 6, 20, 1.5); // firework explosion
+    spawnSparkBurst(state, e.x, e.y, 14, e.col);
     sfx('dieSpeeder');
     addShake(state, 3.5);
   } else if (e.type === 'splitter') {
     spawnPetalBurst(state, e.x, e.y, 14, e.col);
     spawnParticles(state, e.x, e.y, 10, e.col, 2.5, 28, 2.5);
     spawnParticles(state, e.x, e.y, 6, e.col, 3.5, 22, 3); // tight split-pulse ring
+    spawnSparkBurst(state, e.x, e.y, 8, e.col);
     sfx('dieSplitter');
     addShake(state, 4);
   } else if (e.type === 'stalker') {
@@ -276,6 +330,7 @@ function onKill(state: GameRunState, e: Enemy, idx: number): void {
       const ca = (k / 4) * Math.PI * 2;
       state.particles.push({ x: e.x, y: e.y, vx: Math.cos(ca) * 2.5, vy: Math.sin(ca) * 2.5, col: shadowCol, life: 32, maxLife: 32, sz: 2.5 });
     }
+    spawnSparkBurst(state, e.x, e.y, 5, PAL.neon.enemy);
     sfx('dieStalker');
     addShake(state, 3.5);
   } else if (e.type === 'boss') {
@@ -283,6 +338,7 @@ function onKill(state: GameRunState, e: Enemy, idx: number): void {
     spawnParticles(state, e.x, e.y, 30, e.col, 5, 50, 3);
     // 12-way radial burst
     spawnParticles(state, e.x, e.y, 12, e.col, 9, 35, 2.5);
+    spawnSparkBurst(state, e.x, e.y, 25, e.col);
     spawnText(state, e.x, e.y - e.r - 20, 'DEFEATED', PAL.combo, 16);
     sfx('dieBoss');
     addShake(state, 14);
@@ -290,6 +346,7 @@ function onKill(state: GameRunState, e: Enemy, idx: number): void {
     // fallback for unknown types
     spawnPetalBurst(state, e.x, e.y, 12, e.col);
     spawnParticles(state, e.x, e.y, 7, e.col, 3, 32, 3);
+    spawnSparkBurst(state, e.x, e.y, 5, e.col);
     sfx('die');
     addShake(state, 3.5);
   }
@@ -484,6 +541,7 @@ export function updEnemies(state: GameRunState, dt: number, onEndGame: EndGameFn
       e.vy -= (dy / dist) * knockStr;
       addShake(state, e.type === 'boss' ? 16 : 10);
       spawnParticles(state, p.x, p.y, 12, PAL.health, 4, 25, 3);
+      spawnSparkBurst(state, p.x, p.y, 6, PAL.neon.enemy);
       sfx(e.type === 'tank' || e.type === 'boss' ? 'hurtHeavy' : 'hurt');
       if (p.hp <= 0) { p.hp = 0; onEndGame(state); return; }
     }
@@ -495,6 +553,8 @@ export function updEnemies(state: GameRunState, dt: number, onEndGame: EndGameFn
       if (b.fromEnemy) continue;
       if (Math.hypot(b.x - e.x, b.y - e.y) < e.r + b.r) {
         e.hp -= b.dmg;
+        // Hit sparks on every bullet hit
+        spawnSparkBurst(state, b.x, b.y, 4, b.col);
         // Per-enemy hit particles
         if (e.type === 'chaser') {
           spawnParticles(state, b.x, b.y, 5, e.col, 2.5, 14, 2);
@@ -580,6 +640,22 @@ export function updBullets(state: GameRunState, dt: number, onEndGame: EndGameFn
     }
 
     b.x += b.vx * dt; b.y += b.vy * dt; b.life += dt;
+    
+    // Bullet trail particles (every few frames)
+    if (!b.fromEnemy && Math.random() < 0.35) {
+      const trailCol = PAL.trail[b.weaponId as keyof typeof PAL.trail] ?? b.col;
+      state.particles.push({
+        x: b.x - b.vx * 0.3 + rnd(-1, 1),
+        y: b.y - b.vy * 0.3 + rnd(-1, 1),
+        vx: rnd(-0.3, 0.3),
+        vy: rnd(-0.3, 0.3),
+        col: trailCol,
+        life: rnd(8, 14),
+        maxLife: 14,
+        sz: rnd(1, 2),
+      });
+    }
+    
     if (b.x < -25 || b.x > W + 25 || b.y < -25 || b.y > H + 25 || b.life > b.maxLife) { state.bullets.splice(i, 1); continue; }
     if (b.fromEnemy && p.inv <= 0 && !state.shieldActive) {
       if (Math.hypot(b.x - p.x, b.y - p.y) < p.r + b.r) {

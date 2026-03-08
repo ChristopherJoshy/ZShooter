@@ -3,6 +3,53 @@ import { PAL, W, H, ABIL_CD } from './constants';
 import { h2r, glow, rnd, clamp } from './physics';
 import type { GameRunState, Particle, Enemy, Bullet, SeedDrop, Powerup, BgPetal } from './types';
 
+// ── Offscreen background cache ──────────────────────────────────────────────
+// drawBg() output is 100% static: same radial gradient, same grid, same
+// vignette, same border every frame.  We render it once to an OffscreenCanvas
+// and blit it with drawImage() on subsequent calls — eliminating 2 gradient
+// object allocations, 44 grid stroke() calls, and 6 arc strokes every frame.
+let _bgCache: OffscreenCanvas | null = null;
+
+function getBgCache(): OffscreenCanvas {
+  if (_bgCache) return _bgCache;
+
+  const oc = new OffscreenCanvas(W, H);
+  const c = oc.getContext('2d')!;
+
+  const bg = c.createRadialGradient(W / 2, H / 2, 0, W / 2, H / 2, W * 0.82);
+  bg.addColorStop(0, '#f7f2ea');
+  bg.addColorStop(1, '#ede5d5');
+  c.fillStyle = bg;
+  c.fillRect(0, 0, W, H);
+
+  c.strokeStyle = PAL.grid;
+  c.lineWidth = 1;
+  const TILE = 40;
+  for (let x = 0; x <= W; x += TILE) { c.beginPath(); c.moveTo(x, 0); c.lineTo(x, H); c.stroke(); }
+  for (let y = 0; y <= H; y += TILE) { c.beginPath(); c.moveTo(0, y); c.lineTo(W, y); c.stroke(); }
+
+  const vig = c.createRadialGradient(W / 2, H / 2, H * 0.18, W / 2, H / 2, H * 0.95);
+  vig.addColorStop(0, 'rgba(0,0,0,0)');
+  vig.addColorStop(0.5, 'rgba(165,140,115,.08)');
+  vig.addColorStop(1, 'rgba(80,50,30,.22)');
+  c.fillStyle = vig;
+  c.fillRect(0, 0, W, H);
+
+  c.strokeStyle = PAL.border;
+  c.lineWidth = 2;
+  c.beginPath();
+  (c as OffscreenCanvasRenderingContext2D & { roundRect: (x: number, y: number, w: number, h: number, r: number) => void })
+    .roundRect(4, 4, W - 8, H - 8, 12);
+  c.stroke();
+
+  c.strokeStyle = 'rgba(196,149,106,.04)';
+  c.lineWidth = 1;
+  for (let r = 60; r < 430; r += 68) { c.beginPath(); c.arc(W / 2, H / 2, r, 0, Math.PI * 2); c.stroke(); }
+
+  _bgCache = oc;
+  return oc;
+}
+
 function drawNameplate(ctx: CanvasRenderingContext2D, e: Enemy): void {
   if (!e.label) return;
   ctx.save();
@@ -20,34 +67,7 @@ function drawNameplate(ctx: CanvasRenderingContext2D, e: Enemy): void {
 }
 
 export function drawBg(ctx: CanvasRenderingContext2D): void {
-  const bg = ctx.createRadialGradient(W / 2, H / 2, 0, W / 2, H / 2, W * 0.82);
-  bg.addColorStop(0, '#f7f2ea');
-  bg.addColorStop(1, '#ede5d5');
-  ctx.fillStyle = bg;
-  ctx.fillRect(0, 0, W, H);
-
-  ctx.strokeStyle = PAL.grid;
-  ctx.lineWidth = 1;
-  const TILE = 40;
-  for (let x = 0; x <= W; x += TILE) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke(); }
-  for (let y = 0; y <= H; y += TILE) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke(); }
-
-  const vig = ctx.createRadialGradient(W / 2, H / 2, H * 0.25, W / 2, H / 2, H * 0.85);
-  vig.addColorStop(0, 'rgba(0,0,0,0)');
-  vig.addColorStop(1, 'rgba(165,140,115,.12)');
-  ctx.fillStyle = vig;
-  ctx.fillRect(0, 0, W, H);
-
-  ctx.strokeStyle = PAL.border;
-  ctx.lineWidth = 2;
-  ctx.beginPath();
-  (ctx as CanvasRenderingContext2D & { roundRect: (x: number, y: number, w: number, h: number, r: number) => void })
-    .roundRect(4, 4, W - 8, H - 8, 12);
-  ctx.stroke();
-
-  ctx.strokeStyle = 'rgba(196,149,106,.04)';
-  ctx.lineWidth = 1;
-  for (let r = 60; r < 430; r += 68) { ctx.beginPath(); ctx.arc(W / 2, H / 2, r, 0, Math.PI * 2); ctx.stroke(); }
+  ctx.drawImage(getBgCache(), 0, 0);
 }
 
 export function drawBgPetals(ctx: CanvasRenderingContext2D, petals: BgPetal[]): void {
@@ -92,12 +112,11 @@ export function drawArrows(ctx: CanvasRenderingContext2D, state: GameRunState): 
   ctx.globalAlpha = 1;
 }
 
-export function drawPlayer(ctx: CanvasRenderingContext2D, state: GameRunState): void {
+export function drawPlayer(ctx: CanvasRenderingContext2D, state: GameRunState, tck: number): void {
   const { player, stats, abilityActive, shieldActive } = state;
   if (!player) return;
   const ang = player.angle;
   const col = PAL.W[stats.weapon as keyof typeof PAL.W] ?? PAL.player;
-  const tck = Date.now() * 0.001;
 
   if (player.trail.length > 0) {
     ctx.lineCap = 'round';
@@ -159,14 +178,6 @@ export function drawPlayer(ctx: CanvasRenderingContext2D, state: GameRunState): 
   
   const w = stats.weapon;
   ctx.beginPath();
-  if (w === 'seedShot') {
-    ctx.moveTo(player.r * 1.2, 0);
-    ctx.lineTo(-player.r * 0.4, -player.r * 0.85);
-    ctx.lineTo(-player.r * 0.2, -player.r * 0.3);
-    ctx.lineTo(-player.r * 0.7, -player.r * 0.4);
-    ctx.lineTo(-player.r * 0.5, 0);
-    ctx.lineTo(-player.r * 0.7, player.r * 0.4);
-    ctx.lineTo(-player.r * 0.2, player.r * 0.3);
   if (w === 'seedShot') {
     ctx.moveTo(player.r * 1.3, 0);
     ctx.lineTo(-player.r * 0.4, -player.r * 0.9);
@@ -282,13 +293,11 @@ export function drawPlayer(ctx: CanvasRenderingContext2D, state: GameRunState): 
 
   ctx.restore();
 }
-}
 
-export function drawEnemy(ctx: CanvasRenderingContext2D, e: Enemy): void {
+export function drawEnemy(ctx: CanvasRenderingContext2D, e: Enemy, tck: number): void {
   const col = e.col;
   const hp = e.hp / e.maxHp;
   const tA = e.telegraphing ? (1 - e.telTimer / 20) * 0.65 : 0;
-  const tck = Date.now() * 0.001;
 
   glow(ctx, e.x, e.y, e.r * 3.5, col, 0.15 + tA * 0.15);
   if (e.telegraphing) {
@@ -443,10 +452,12 @@ export function drawEnemy(ctx: CanvasRenderingContext2D, e: Enemy): void {
   } else if (e.type === 'boss') {
     const ph = e.phase ?? 0; const arms = 6 + ph;
     ctx.rotate(e.life * 0.012 * (1 + ph * 0.2));
-    
-    // Outer massive armor plates
+
+    // Outer massive armor plates — avoid save/restore per arm by tracking
+    // cumulative angle and reversing at the end.
+    const armAngleStep = (Math.PI * 2) / arms;
     for (let bk = 0; bk < arms; bk++) {
-      ctx.save(); ctx.rotate((bk / arms) * Math.PI * 2);
+      ctx.rotate(armAngleStep);
       ctx.beginPath();
       ctx.moveTo(e.r * 0.45, -e.r * 0.45);
       ctx.lineTo(0, -e.r * 1.15);
@@ -454,13 +465,14 @@ export function drawEnemy(ctx: CanvasRenderingContext2D, e: Enemy): void {
       ctx.closePath();
       ctx.fillStyle = col; ctx.globalAlpha = 0.85; ctx.fill();
       ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 2.5; ctx.globalAlpha = 0.6; ctx.stroke();
-      
+
       // Spike accents
       ctx.beginPath(); ctx.moveTo(0, -e.r * 0.6); ctx.lineTo(0, -e.r * 1.0);
       ctx.lineWidth = 1.5; ctx.globalAlpha = 0.4; ctx.stroke();
-      ctx.restore();
     }
-    
+    // Undo all arm rotations to return to the boss-base rotation context
+    ctx.rotate(-armAngleStep * arms);
+
     // Counter-rotating inner gear
     ctx.save(); ctx.rotate(-e.life * 0.025);
     ctx.beginPath();
@@ -474,7 +486,7 @@ export function drawEnemy(ctx: CanvasRenderingContext2D, e: Enemy): void {
     ctx.fillStyle = h2r(col, 0.6); ctx.fill();
     ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 2; ctx.stroke();
     ctx.restore();
-    
+
     // Throbbing Boss Core
     const corePulse = Math.sin(tck * (8 + ph * 4)) * 0.1;
     ctx.globalAlpha = 1;
@@ -525,9 +537,12 @@ export function drawSpeederTrail(ctx: CanvasRenderingContext2D, e: Enemy): void 
   ctx.lineJoin = 'miter';
 }
 
-export function drawBullet(ctx: CanvasRenderingContext2D, b: Bullet): void {
+export function drawBullet(ctx: CanvasRenderingContext2D, b: Bullet, tck: number): void {
   const wid = b.weaponId;
-  const tck = Date.now() * 0.001;
+
+  // Enhanced glow for all bullets
+  const glowIntensity = b.fromEnemy ? 0.2 : 0.35;
+  glow(ctx, b.x, b.y, b.r * (b.fromEnemy ? 4 : 5.5), b.col, glowIntensity);
 
   if (wid === 'pulseBlossom') {
     glow(ctx, b.x, b.y, b.r * 6, b.col, 0.3);
@@ -630,16 +645,18 @@ export function drawBullet(ctx: CanvasRenderingContext2D, b: Bullet): void {
     ctx.restore(); ctx.globalAlpha = 1;
 
   } else {
-    glow(ctx, b.x, b.y, b.r * 5, b.col, 0.25);
+    glow(ctx, b.x, b.y, b.r * 6, b.col, 0.35);
+    // Extra outer glow ring for more visibility
+    glow(ctx, b.x, b.y, b.r * 8, b.col, 0.15);
     const spd = Math.hypot(b.vx, b.vy);
     if (spd > 0) {
-      const len = b.fromEnemy ? 10 : 22;
+      const len = b.fromEnemy ? 10 : 28;
       const nx = b.vx / spd; const ny = b.vy / spd;
       const tg = ctx.createLinearGradient(b.x - nx * len, b.y - ny * len, b.x, b.y);
       tg.addColorStop(0, 'rgba(0,0,0,0)');
-      tg.addColorStop(1, h2r(b.col, 0.6));
+      tg.addColorStop(1, h2r(b.col, 0.7));
       ctx.strokeStyle = tg; 
-      ctx.lineWidth = b.r * 2;
+      ctx.lineWidth = b.r * 2.2;
       ctx.lineCap = 'round';
       ctx.beginPath();
       ctx.moveTo(b.x - nx * len, b.y - ny * len);
@@ -651,15 +668,15 @@ export function drawBullet(ctx: CanvasRenderingContext2D, b: Bullet): void {
       tg2.addColorStop(0, 'rgba(255,255,255,0)');
       tg2.addColorStop(1, '#ffffff');
       ctx.strokeStyle = tg2;
-      ctx.lineWidth = b.r * 0.8;
+      ctx.lineWidth = b.r * 0.9;
       ctx.beginPath();
       ctx.moveTo(b.x - nx * len * 0.6, b.y - ny * len * 0.6);
       ctx.lineTo(b.x, b.y);
       ctx.stroke();
     }
-    ctx.beginPath(); ctx.arc(b.x, b.y, b.r * 1.1, 0, Math.PI * 2);
-    ctx.fillStyle = b.col; ctx.globalAlpha = 0.9; ctx.fill(); 
-    ctx.beginPath(); ctx.arc(b.x, b.y, b.r * 0.5, 0, Math.PI * 2);
+    ctx.beginPath(); ctx.arc(b.x, b.y, b.r * 1.2, 0, Math.PI * 2);
+    ctx.fillStyle = b.col; ctx.globalAlpha = 0.92; ctx.fill(); 
+    ctx.beginPath(); ctx.arc(b.x, b.y, b.r * 0.55, 0, Math.PI * 2);
     ctx.fillStyle = '#ffffff'; ctx.fill();
     ctx.globalAlpha = 1;
   }
@@ -813,6 +830,7 @@ export function drawWaveAnn(ctx: CanvasRenderingContext2D, state: GameRunState):
 }
 
 export function renderGame(ctx: CanvasRenderingContext2D, state: GameRunState, showOpponentNames = true): void {
+  const tck = Date.now() * 0.001;
   drawBg(ctx);
   drawBgPetals(ctx, state.bgPetals);
   drawArrows(ctx, state);
@@ -821,11 +839,11 @@ export function renderGame(ctx: CanvasRenderingContext2D, state: GameRunState, s
   state.particles.forEach((p) => drawParticle(ctx, p));
   state.enemies.forEach((e) => {
     drawSpeederTrail(ctx, e);
-    drawEnemy(ctx, e);
+    drawEnemy(ctx, e, tck);
     if (showOpponentNames) drawNameplate(ctx, e);
   });
-  state.bullets.forEach((b) => drawBullet(ctx, b));
-  drawPlayer(ctx, state);
+  state.bullets.forEach((b) => drawBullet(ctx, b, tck));
+  drawPlayer(ctx, state, tck);
   drawReloadArc(ctx, state);
   drawAbilRing(ctx, state);
   drawCrosshair(ctx, state);
@@ -833,9 +851,7 @@ export function renderGame(ctx: CanvasRenderingContext2D, state: GameRunState, s
 }
 
 export function renderBg(ctx: CanvasRenderingContext2D, state: GameRunState): void {
-  ctx.save();
   drawBg(ctx);
   drawBgPetals(ctx, state.bgPetals);
   state.particles.forEach((p) => drawParticle(ctx, p));
-  ctx.restore();
 }

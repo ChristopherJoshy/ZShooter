@@ -62,12 +62,14 @@ function makeRunState(save: any, opponentNames?: string[]): GameRunState {
   return state;
 }
 
-export default function GameCanvas({ isTouch, onReturn, opponentNames = [] }: { isTouch: boolean; onReturn?: () => void; opponentNames?: string[] }) {
+export default function GameCanvas({ isTouch, isMobile, onReturn, opponentNames = [] }: { isTouch: boolean; isMobile?: boolean; onReturn?: () => void; opponentNames?: string[] }) {
   const { save, setSave, gameState, setGameState, setRunState, runState, persistSave, setLastResult, gameMode, setLastRankedResult, settings } = useGame();
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const ctxRef = useRef<CanvasRenderingContext2D | null>(null);
   const stateRef = useRef<GameRunState | null>(null);
   const playingRef = useRef(false);
   const runStartRef = useRef(0);
+  const hudFrameRef = useRef(0);
 
   // Initialise run state when game starts; keep ambient state for background when idle
   useEffect(() => {
@@ -188,15 +190,32 @@ export default function GameCanvas({ isTouch, onReturn, opponentNames = [] }: { 
   const tick = useCallback((dt: number) => {
     const canvas = canvasRef.current;
     if (!canvas) return;
-    const ctx = canvas.getContext('2d');
+    // Cache the context on first use — getContext() is a DOM call we don't
+    // need to repeat every frame.
+    if (!ctxRef.current) {
+      ctxRef.current = canvas.getContext('2d');
+    }
+    const ctx = ctxRef.current;
     if (!ctx) return;
 
     const state = stateRef.current;
     if (playingRef.current && state) {
       updateGame(state, dt, handleEndGame, handleSeedCollect);
+      // Apply screen shake
+      if (state.shake.m > 0) {
+        ctx.save();
+        const sx = (Math.random() - 0.5) * state.shake.m * 2;
+        const sy = (Math.random() - 0.5) * state.shake.m * 2;
+        ctx.translate(sx + state.shake.x, sy + state.shake.y);
+      }
       renderGame(ctx, state, settings.showOpponentNames);
-      // Shallow-copy state into React context each frame so HUD stays live.
-      setRunState({ ...state });
+      if (state.shake.m > 0) ctx.restore();
+      // Throttle HUD React updates to ~20 fps (every 3 game frames at 60 fps)
+      // to reduce React re-render overhead while keeping HUD visually smooth.
+      hudFrameRef.current = (hudFrameRef.current + 1) % 3;
+      if (hudFrameRef.current === 0) {
+        setRunState({ ...state });
+      }
     } else {
       // Garden / results — render ambient background with floating petals.
       // stateRef holds a minimal ambient state when not playing.
@@ -275,7 +294,7 @@ export default function GameCanvas({ isTouch, onReturn, opponentNames = [] }: { 
   const isPlaying = gameState === 'playing';
 
   return (
-    <div style={{ position: 'relative', width: W, height: H }}>
+    <div style={{ position: 'relative', width: '100%', height: '100%' }}>
       <canvas
         ref={canvasRef}
         id="gc"
@@ -290,7 +309,7 @@ export default function GameCanvas({ isTouch, onReturn, opponentNames = [] }: { 
         </>
       )}
       {isTouch && (
-        <TouchControls stateRef={stateRef} visible={isPlaying && settings.touchControls} />
+        <TouchControls stateRef={stateRef} visible={isPlaying && settings.touchControls} isMobile={isMobile} />
       )}
     </div>
   );
