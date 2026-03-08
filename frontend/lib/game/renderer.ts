@@ -171,37 +171,6 @@ export function drawPlayer(ctx: CanvasRenderingContext2D, state: GameRunState, t
   const ang = player.angle;
   const col = PAL.W[stats.weapon as keyof typeof PAL.W] ?? PAL.player;
 
-  if (player.trail.length > 0) {
-    ctx.lineCap = 'round';
-    ctx.lineJoin = 'round';
-    for (let i = 0; i < player.trail.length - 1; i++) {
-      const t1 = player.trail[i];
-      const t2 = player.trail[i + 1];
-      const pct = i / player.trail.length;
-      const alpha = pct * (abilityActive && stats.ability === 'petalDash' ? 0.6 : 0.25);
-      const width = player.r * (0.8 + pct * 0.4);
-      
-      ctx.globalAlpha = alpha;
-      ctx.beginPath();
-      ctx.moveTo(t1.x, t1.y);
-      ctx.lineTo(t2.x, t2.y);
-      ctx.strokeStyle = col;
-      ctx.lineWidth = width;
-      ctx.stroke();
-
-      ctx.beginPath();
-      ctx.moveTo(t1.x, t1.y);
-      ctx.lineTo(t2.x, t2.y);
-      ctx.strokeStyle = '#ffffff';
-      ctx.lineWidth = width * 0.3;
-      ctx.globalAlpha = alpha * 0.7;
-      ctx.stroke();
-    }
-    ctx.globalAlpha = 1;
-    ctx.lineCap = 'butt';
-    ctx.lineJoin = 'miter';
-  }
-
   const flash = player.inv > 0 && !shieldActive && Math.floor(player.inv / 5) % 2 === 0;
   if (flash && !abilityActive) return;
 

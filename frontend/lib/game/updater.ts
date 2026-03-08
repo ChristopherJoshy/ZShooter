@@ -249,8 +249,6 @@ export function updPlayer(state: GameRunState, dt: number, onEndGame: EndGameFn)
   p.x = clamp(p.x + p.vx * dt, p.r, W - p.r);
   p.y = clamp(p.y + p.vy * dt, p.r, H - p.r);
   p.angle = Math.atan2(state.mouseY - p.y, state.mouseX - p.x);
-  p.trail.push({ x: p.x, y: p.y });
-  if (p.trail.length > 10) p.trail.shift();
   if (p.inv > 0) p.inv -= dt;
   if (state.stats.regen > 0) p.hp = Math.min(p.maxHp, p.hp + state.stats.regen * dt);
 
