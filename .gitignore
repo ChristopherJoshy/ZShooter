@@ -5,4 +5,5 @@ dist/
 .next/
 agent/
 .agents/
+GEMINI.md
 *.tsbuildinfo
